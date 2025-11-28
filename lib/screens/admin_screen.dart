@@ -1,6 +1,7 @@
 // lib/screens/admin_screen.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:http/http.dart' as http;
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({super.key});
@@ -8,35 +9,42 @@ class AdminScreen extends StatefulWidget {
 }
 
 class _AdminScreenState extends State<AdminScreen> {
+  RealtimeChannel? _channel;
   List<Map<String, dynamic>> users = [];
+  List<Map<String, dynamic>> filteredUsers = [];
+  final TextEditingController _searchController = TextEditingController();
   bool loading = true;
 
-  final List<String> roles = ['user', 'moderator', 'admin'];
+  final roles = ['user', 'moderator', 'admin'];
 
   @override
   void initState() {
     super.initState();
-    _checkAdminAccess();
+    _setupRealtime();
+    _searchController.addListener(_filterUsers);
   }
 
-  Future<void> _checkAdminAccess() async {
-    final user = Supabase.instance.client.auth.currentUser!;
-    final profile = await Supabase.instance.client
-        .from('profiles')
-        .select('role')
-        .eq('id', user.id)
-        .single();
+  void _setupRealtime() {
+    _channel = Supabase.instance.client
+        .channel('public:profiles')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'profiles',
+          callback: (payload) {
+            print('Realtime update detected: ${payload.newRecord}');  // For debugging
+            loadUsers(); // Любое изменение → мгновенное обновление
+          },
+        )
+        .subscribe((status, error) {
+          // Debug: Print status to console
+          print('Realtime status: $status');
+          if (error != null) {
+            print('Realtime error: $error');
+          }
+        });
 
-    if (profile['role'] != 'admin') {
-      if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Admin access required')),
-        );
-      }
-    } else {
-      loadUsers();
-    }
+    loadUsers(); // Первая загрузка
   }
 
   Future<void> loadUsers() async {
@@ -44,39 +52,91 @@ class _AdminScreenState extends State<AdminScreen> {
     try {
       final response = await Supabase.instance.client
           .from('profiles')
-          .select('id, email, full_name, role')
-          .order('created_at', ascending: false);
+          .select('id, email, full_name, role, created_at');
+
+      final List<Map<String, dynamic>> data =
+          List<Map<String, dynamic>>.from(response);
 
       setState(() {
-        users = List<Map<String, dynamic>>.from(response);
+        users = data;
+        filteredUsers = data;
         loading = false;
       });
     } catch (e) {
       setState(() => loading = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
     }
   }
 
-  Future<void> updateUserRole(String userId, String newRole) async {
-    try {
-      await Supabase.instance.client
-          .from('profiles')
-          .update({'role': newRole})
-          .eq('id', userId);
+  void _filterUsers() {
+    final query = _searchController.text.toLowerCase();
+    setState(() {
+      filteredUsers = users.where((user) {
+        final email = (user['email'] ?? '').toString().toLowerCase();
+        final name = (user['full_name'] ?? '').toString().toLowerCase();
+        return email.contains(query) || name.contains(query);
+      }).toList();
+    });
+  }
 
-      // Refresh list
-      loadUsers();
+  Future<void> updateRole(String userId, String newRole) async {
+    await Supabase.instance.client
+        .from('profiles')
+        .update({'role': newRole})
+        .eq('id', userId);
+    // Realtime сам обновит список — ничего больше не нужно!
+  }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Role updated to $newRole')),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to update role')),
-      );
+  Future<void> deleteUser(String userId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete user?'),
+        content: const Text('This action cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        final session = Supabase.instance.client.auth.currentSession;
+        if (session == null) throw Exception('Not logged in');
+
+        // Call your Edge Function (replace with your project ref)
+        final response = await http.post(
+          Uri.parse('https://rmqwopgsvpbybbxrtccc.supabase.co/functions/v1/delete-user?userId=$userId'),
+          headers: {
+            'Authorization': 'Bearer ${session.accessToken}',
+            'Content-Type': 'application/json',
+          },
+        );
+
+        if (response.statusCode == 200) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('User deleted successfully!')),
+          );
+          // Realtime will auto-remove from list
+        } else {
+          throw Exception('Server error: ${response.body}');
+        }
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Delete failed: $e')),
+        );
+      }
     }
+  }
+
+  @override
+  void dispose() {
+    _channel?.unsubscribe();
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
@@ -88,59 +148,82 @@ class _AdminScreenState extends State<AdminScreen> {
           IconButton(icon: const Icon(Icons.refresh), onPressed: loadUsers),
         ],
       ),
-      body: loading
-          ? const Center(child: CircularProgressIndicator())
-          : users.isEmpty
-              ? const Center(child: Text('No users yet'))
-              : ListView.builder(
-                  itemCount: users.length,
-                  itemBuilder: (context, i) {
-                    final user = users[i];
-                    final String currentRole = user['role'] ?? 'user';
-                    final String email = user['email'] ?? 'no-email@example.com';
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Search by email or name...',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
+          Expanded(
+            child: loading
+                ? const Center(child: CircularProgressIndicator())
+                : filteredUsers.isEmpty
+                    ? const Center(child: Text('No users found'))
+                    : ListView.builder(
+                        itemCount: filteredUsers.length,
+                        itemBuilder: (context, i) {
+                          final user = filteredUsers[i];
+                          final String role = user['role'] ?? 'user';
 
-                    return Card(
-                      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: Colors.deepPurple,
-                          child: Text(
-                            email[0].toUpperCase(),
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                        ),
-                        title: Text(email, style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text('Name: ${user['full_name'] ?? 'Not set'}'),
-                        trailing: DropdownButton<String>(
-                          value: currentRole,
-                          underline: const SizedBox(),
-                          items: roles.map((role) {
-                            return DropdownMenuItem(
-                              value: role,
-                              child: Text(
-                                role.toUpperCase(),
-                                style: TextStyle( 
-                                  color: role == 'admin'
-                                      ? Colors.green
-                                      : role == 'moderator'
-                                          ? Colors.orange
-                                          : Colors.grey[700],
-                                  fontWeight: FontWeight.bold,
-                                )
+                          return Dismissible(
+                            key: Key(user['id']),
+                            direction: DismissDirection.endToStart,
+                            background: Container(color: Colors.red, alignment: Alignment.centerRight, padding: const EdgeInsets.only(right: 20), child: const Icon(Icons.delete, color: Colors.white)),
+                            onDismissed: (_) => deleteUser(user['id']),
+                            child: Card(
+                              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                              child: ListTile(
+                                leading: CircleAvatar(
+                                  backgroundColor: Colors.deepPurple,
+                                  child: Text(
+                                    (user['email'] as String? ?? 'U')[0].toUpperCase(),
+                                    style: const TextStyle(color: Colors.white),
+                                  ),
+                                ),
+                                title: Text(user['email'] ?? 'No email'),
+                                subtitle: Text(user['full_name'] ?? 'No name'),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    DropdownButton<String>(
+                                      value: role,
+                                      items: roles
+                                          .map((r) => DropdownMenuItem(
+                                                value: r,
+                                                child: Text(r.toUpperCase(),
+                                                    style: TextStyle(
+                                                      color: r == 'admin'
+                                                          ? Colors.green
+                                                          : r == 'moderator'
+                                                              ? Colors.orange
+                                                              : Colors.grey[700],
+                                                      fontWeight: FontWeight.bold,
+                                                    )),
+                                              ))
+                                          .toList(),
+                                      onChanged: (val) => val != null ? updateRole(user['id'], val) : null,
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.delete, color: Colors.red),
+                                      onPressed: () => deleteUser(user['id']),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            );
-                          }).toList(),
-                          onChanged: (newRole) {
-                            if (newRole != null && newRole != currentRole) {
-                              print(user);
-                              updateUserRole(user['id'], newRole);
-                            }
-                          },
-                        ),
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
+          ),
+        ],
+      ),
     );
   }
 }
