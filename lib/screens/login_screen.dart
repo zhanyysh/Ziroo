@@ -1,6 +1,7 @@
 // lib/screens/login_screen.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'signup_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -29,6 +30,34 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _nativeGoogleSignIn() async {
+    const webClientId = '713667737926-ptnfpas2e7b12i4kj1cqenhktugolmof.apps.googleusercontent.com';
+    const iosClientId = '713667737926-6qkg6ikl86a841sttnkegm7v701nrttn.apps.googleusercontent.com';
+    final scopes = ['email', 'profile'];
+    final googleSignIn = GoogleSignIn.instance;
+    await googleSignIn.initialize(
+      serverClientId: webClientId,
+      clientId: iosClientId,
+    );
+    final googleUser = await googleSignIn.attemptLightweightAuthentication();
+    if (googleUser == null) {
+      throw AuthException('Failed to sign in with Google.');
+    }
+    final authorization =
+        await googleUser.authorizationClient.authorizationForScopes(scopes) ??
+        await googleUser.authorizationClient.authorizeScopes(scopes);
+    final idToken = googleUser.authentication.idToken;
+    if (idToken == null) {
+      throw AuthException('No ID Token found.');
+    }
+    await Supabase.instance.client.auth.signInWithIdToken(
+      provider: OAuthProvider.google,
+      idToken: idToken,
+      accessToken: authorization.accessToken,
+    );
+  }
+  
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -45,6 +74,10 @@ class _LoginScreenState extends State<LoginScreen> {
             ElevatedButton(
               onPressed: _loading ? null : _login,
               child: _loading ? const CircularProgressIndicator() : const Text('Login'),
+            ),
+            ElevatedButton(
+              onPressed: _loading ? null : _nativeGoogleSignIn,
+              child: _loading ? const CircularProgressIndicator(): const Text('Login with Google'),
             ),
             TextButton(
               onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SignupScreen())),
