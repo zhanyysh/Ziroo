@@ -60,7 +60,7 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 30),
             if (isAdmin)
               ElevatedButton(
-                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminScreen())),
+                onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminDashboard())),
                 child: const Text('Admin Panel'),
               )
           ],

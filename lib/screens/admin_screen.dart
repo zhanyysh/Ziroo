@@ -1,229 +1,139 @@
-// lib/screens/admin_screen.dart
+// lib/screens/admin_dashboard.dart
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:http/http.dart' as http;
+import 'users_screen.dart';        // ← сейчас
+import 'companies_screen.dart'; // ← потом просто раскомментируешь
 
-class AdminScreen extends StatefulWidget {
-  const AdminScreen({super.key});
-  @override State<AdminScreen> createState() => _AdminScreenState();
-}
+class AdminDashboard extends StatelessWidget {
+  const AdminDashboard({super.key});
 
-class _AdminScreenState extends State<AdminScreen> {
-  RealtimeChannel? _channel;
-  List<Map<String, dynamic>> users = [];
-  List<Map<String, dynamic>> filteredUsers = [];
-  final TextEditingController _searchController = TextEditingController();
-  bool loading = true;
+  // ←←← ВСЁ, ЧТО НУЖНО МЕНЯТЬ ПРИ ДОБАВЛЕНИИ НОВЫХ РАЗДЕЛОВ — ЭТОТ СПИСОК
+  static final List<AdminMenuItem> menuItems = [
+    AdminMenuItem(
+      icon: Icons.people_alt_outlined,
+      title: 'Users Panel',
+      subtitle: 'Manage users, roles & delete accounts',
+      color: Colors.blue,
+      screen: const UsersScreen(),
+    ),
 
-  final roles = ['user', 'moderator', 'admin'];
+    // ← Просто добавляй новые элементы сюда:
+    AdminMenuItem(
+      icon: Icons.business,
+      title: 'Companies',
+      subtitle: 'Manage organizations and plans',
+      color: Colors.green,
+      screen: const CompaniesScreen(),
+    ),
 
-  @override
-  void initState() {
-    super.initState();
-    _setupRealtime();
-    _searchController.addListener(_filterUsers);
-  }
-
-  void _setupRealtime() {
-    _channel = Supabase.instance.client
-        .channel('public:profiles')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'profiles',
-          callback: (payload) {
-            print('Realtime update detected: ${payload.newRecord}');  // For debugging
-            loadUsers(); // Любое изменение → мгновенное обновление
-          },
-        )
-        .subscribe((status, error) {
-          // Debug: Print status to console
-          print('Realtime status: $status');
-          if (error != null) {
-            print('Realtime error: $error');
-          }
-        });
-
-    loadUsers(); // Первая загрузка
-  }
-
-  Future<void> loadUsers() async {
-    setState(() => loading = true);
-    try {
-      final response = await Supabase.instance.client
-          .from('profiles')
-          .select('id, email, full_name, role, created_at');
-
-      final List<Map<String, dynamic>> data =
-          List<Map<String, dynamic>>.from(response);
-
-      setState(() {
-        users = data;
-        filteredUsers = data;
-        loading = false;
-      });
-    } catch (e) {
-      setState(() => loading = false);
-    }
-  }
-
-  void _filterUsers() {
-    final query = _searchController.text.toLowerCase();
-    setState(() {
-      filteredUsers = users.where((user) {
-        final email = (user['email'] ?? '').toString().toLowerCase();
-        final name = (user['full_name'] ?? '').toString().toLowerCase();
-        return email.contains(query) || name.contains(query);
-      }).toList();
-    });
-  }
-
-  Future<void> updateRole(String userId, String newRole) async {
-    await Supabase.instance.client
-        .from('profiles')
-        .update({'role': newRole})
-        .eq('id', userId);
-    // Realtime сам обновит список — ничего больше не нужно!
-  }
-
-  Future<void> deleteUser(String userId) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete user?'),
-        content: const Text('This action cannot be undone.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm == true) {
-      try {
-        final session = Supabase.instance.client.auth.currentSession;
-        if (session == null) throw Exception('Not logged in');
-
-        // Call your Edge Function (replace with your project ref)
-        final response = await http.post(
-          Uri.parse('https://rmqwopgsvpbybbxrtccc.supabase.co/functions/v1/delete-user?userId=$userId'),
-          headers: {
-            'Authorization': 'Bearer ${session.accessToken}',
-            'Content-Type': 'application/json',
-          },
-        );
-
-        if (response.statusCode == 200) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('User deleted successfully!')),
-          );
-          // Realtime will auto-remove from list
-        } else {
-          throw Exception('Server error: ${response.body}');
-        }
-      } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Delete failed: $e')),
-        );
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _channel?.unsubscribe();
-    _searchController.dispose();
-    super.dispose();
-  }
+  ];
+  // ←←← КОНЕЦ СПИСКА
 
   @override
   Widget build(BuildContext context) {
+    final bool isSingleItem = menuItems.length == 1;
+    final double screenWidth = MediaQuery.of(context).size.width;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Admin Panel'),
-        actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: loadUsers),
-        ],
+        title: const Text('Admin Dashboard'),
+        centerTitle: true,
+        backgroundColor: Colors.deepPurple,
+        foregroundColor: Colors.white,
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Search by email or name...',
-                prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-          ),
-          Expanded(
-            child: loading
-                ? const Center(child: CircularProgressIndicator())
-                : filteredUsers.isEmpty
-                    ? const Center(child: Text('No users found'))
-                    : ListView.builder(
-                        itemCount: filteredUsers.length,
-                        itemBuilder: (context, i) {
-                          final user = filteredUsers[i];
-                          final String role = user['role'] ?? 'user';
+      body: isSingleItem
+          ? _buildSingleCard(context)                // ← 1 карточка → красиво по центру
+          : _buildGrid(screenWidth),                  // ← много карточек → сетка
+    );
+  }
 
-                          return Dismissible(
-                            key: Key(user['id']),
-                            direction: DismissDirection.endToStart,
-                            background: Container(color: Colors.red, alignment: Alignment.centerRight, padding: const EdgeInsets.only(right: 20), child: const Icon(Icons.delete, color: Colors.white)),
-                            onDismissed: (_) => deleteUser(user['id']),
-                            child: Card(
-                              margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                              child: ListTile(
-                                leading: CircleAvatar(
-                                  backgroundColor: Colors.deepPurple,
-                                  child: Text(
-                                    (user['email'] as String? ?? 'U')[0].toUpperCase(),
-                                    style: const TextStyle(color: Colors.white),
-                                  ),
-                                ),
-                                title: Text(user['email'] ?? 'No email'),
-                                subtitle: Text(user['full_name'] ?? 'No name'),
-                                trailing: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    DropdownButton<String>(
-                                      value: role,
-                                      items: roles
-                                          .map((r) => DropdownMenuItem(
-                                                value: r,
-                                                child: Text(r.toUpperCase(),
-                                                    style: TextStyle(
-                                                      color: r == 'admin'
-                                                          ? Colors.green
-                                                          : r == 'moderator'
-                                                              ? Colors.orange
-                                                              : Colors.grey[700],
-                                                      fontWeight: FontWeight.bold,
-                                                    )),
-                                              ))
-                                          .toList(),
-                                      onChanged: (val) => val != null ? updateRole(user['id'], val) : null,
-                                    ),
-                                    IconButton(
-                                      icon: const Icon(Icons.delete, color: Colors.red),
-                                      onPressed: () => deleteUser(user['id']),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-          ),
-        ],
+  // Одна карточка — большая и по центру
+  Widget _buildSingleCard(BuildContext context) {
+    final item = menuItems.first;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: _buildCard(context, item, isLarge: true),
       ),
     );
   }
+
+  // Несколько карточек — адаптивная сетка
+  Widget _buildGrid(double screenWidth) {
+    final int crossAxisCount = screenWidth > 900 ? 3 : (screenWidth > 600 ? 2 : 1);
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: GridView.builder(
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: crossAxisCount,
+          crossAxisSpacing: 16,
+          mainAxisSpacing: 16,
+          childAspectRatio: 1.4,
+        ),
+        itemCount: menuItems.length,
+        itemBuilder: (context, index) => _buildCard(context, menuItems[index]),
+      ),
+    );
+  }
+
+  Widget _buildCard(BuildContext context, AdminMenuItem item, {bool isLarge = false}) {
+    final double iconSize = isLarge ? 56 : 40;
+    final double titleSize = isLarge ? 26 : 18;
+    final double subtitleSize = isLarge ? 16 : 13;
+
+    return Card(
+      elevation: isLarge ? 16 : 8,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(isLarge ? 28 : 20)),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(isLarge ? 28 : 20),
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => item.screen)),
+        child: Container(
+          constraints: isLarge ? const BoxConstraints(maxWidth: 420) : null,
+          padding: EdgeInsets.all(isLarge ? 36 : 20),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              CircleAvatar(
+                radius: isLarge ? 56 : 36,
+                backgroundColor: item.color.withOpacity(0.15),
+                child: Icon(item.icon, size: iconSize, color: item.color),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                item.title,
+                style: TextStyle(fontSize: titleSize, fontWeight: FontWeight.bold),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                item.subtitle,
+                style: TextStyle(color: Colors.grey[600], fontSize: subtitleSize),
+                textAlign: TextAlign.center,
+              ),
+              if (isLarge) ...[
+                const SizedBox(height: 24),
+                Icon(Icons.arrow_forward_ios, color: item.color, size: 32),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ←←← КЛАСС-ОБОЛОЧКА — добавляй новые экраны и всё!
+class AdminMenuItem {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+  final Widget screen;
+
+  AdminMenuItem({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    required this.screen,
+  });
 }

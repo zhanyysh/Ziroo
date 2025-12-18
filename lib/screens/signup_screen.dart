@@ -1,6 +1,8 @@
 // lib/screens/signup_screen.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -27,6 +29,35 @@ class _SignupScreenState extends State<SignupScreen> {
     }
   }
 
+  Future<void> _nativeGoogleSignIn() async {
+    const webClientId = '713667737926-ptnfpas2e7b12i4kj1cqenhktugolmof.apps.googleusercontent.com';
+    const iosClientId = '713667737926-6qkg6ikl86a841sttnkegm7v701nrttn.apps.googleusercontent.com';
+    final scopes = ['email', 'profile'];
+    final googleSignIn = GoogleSignIn.instance;
+    await googleSignIn.initialize(
+      serverClientId: webClientId,
+      clientId: iosClientId,
+    );
+    final googleUser = await googleSignIn.attemptLightweightAuthentication();
+    Navigator.pop(context);  // Pop back to auth handler (it will show Home if logged in)
+
+    if (googleUser == null) {
+      throw AuthException('Failed to sign in with Google.');
+    }
+    final authorization =
+        await googleUser.authorizationClient.authorizationForScopes(scopes) ??
+        await googleUser.authorizationClient.authorizeScopes(scopes);
+    final idToken = googleUser.authentication.idToken;
+    if (idToken == null) {
+      throw AuthException('No ID Token found.');
+    }
+    await Supabase.instance.client.auth.signInWithIdToken(
+      provider: OAuthProvider.google,
+      idToken: idToken,
+      accessToken: authorization.accessToken,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -43,6 +74,10 @@ class _SignupScreenState extends State<SignupScreen> {
             ElevatedButton(
               onPressed: _loading ? null : _signup,
               child: _loading ? const CircularProgressIndicator() : const Text('Create Account'),
+            ),
+            ElevatedButton(
+              onPressed: _loading ? null : _nativeGoogleSignIn,
+              child: _loading ? const CircularProgressIndicator(): const Text('Sign Up with Google'),
             ),
           ],
         ),
