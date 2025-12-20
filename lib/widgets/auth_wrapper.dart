@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../screens/login_screen.dart';
-import '../screens/home_screen.dart';
+import '../screens/role_check_screen.dart';
 
 class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
@@ -14,12 +14,14 @@ class AuthWrapper extends StatelessWidget {
       builder: (context, snapshot) {
         // Still checking auth state
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
         }
 
-        // User is logged in → go to home
+        // User is logged in → go to role check
         if (snapshot.hasData && snapshot.data!.session != null) {
-          return const HomeScreen();
+          return const RoleCheckScreen();
         }
 
         // User is NOT logged in → show login
