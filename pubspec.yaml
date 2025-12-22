@@ -44,6 +44,8 @@ dependencies:
   flutter_map: ^8.2.2
   latlong2: ^0.9.1
   shared_preferences: ^2.5.3
+  geolocator: ^14.0.2
+  flutter_rating_bar: ^4.0.1
 
 assets:
   - assets/g-logo.png
