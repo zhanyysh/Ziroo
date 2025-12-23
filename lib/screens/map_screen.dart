@@ -4,6 +4,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class MapScreen extends StatefulWidget {
   const MapScreen({super.key});
@@ -21,6 +22,8 @@ class _MapScreenState extends State<MapScreen> {
   LatLng? _currentPosition;
   final FocusNode _searchFocusNode = FocusNode();
 
+  // StreamController не нужен, так как mapController имеет свой стрим событий
+
   @override
   void initState() {
     super.initState();
@@ -37,15 +40,100 @@ class _MapScreenState extends State<MapScreen> {
     super.dispose();
   }
 
+  String _transliterate(String text) {
+    const map = {
+      'а': 'a',
+      'б': 'b',
+      'в': 'v',
+      'г': 'g',
+      'д': 'd',
+      'е': 'e',
+      'ё': 'yo',
+      'ж': 'zh',
+      'з': 'z',
+      'и': 'i',
+      'й': 'y',
+      'к': 'k',
+      'л': 'l',
+      'м': 'm',
+      'н': 'n',
+      'о': 'o',
+      'п': 'p',
+      'р': 'r',
+      'с': 's',
+      'т': 't',
+      'у': 'u',
+      'ф': 'f',
+      'х': 'kh',
+      'ц': 'ts',
+      'ч': 'ch',
+      'ш': 'sh',
+      'щ': 'shch',
+      'ъ': '',
+      'ы': 'y',
+      'ь': '',
+      'э': 'e',
+      'ю': 'yu',
+      'я': 'ya',
+    };
+
+    final sb = StringBuffer();
+    for (int i = 0; i < text.length; i++) {
+      final char = text[i].toLowerCase();
+      sb.write(map[char] ?? char);
+    }
+    return sb.toString();
+  }
+
+  // Нормализация для нечеткого поиска (kh -> h, ts -> c, zh -> j)
+  String _normalize(String text) {
+    return text
+        .replaceAll('kh', 'h')
+        .replaceAll('ts', 'c')
+        .replaceAll('zh', 'j')
+        .replaceAll('yo', 'e');
+  }
+
   void _onSearchChanged() {
-    final query = _searchController.text.toLowerCase();
+    final query = _searchController.text.toLowerCase().trim();
+    // Транслитерируем и нормализуем запрос
+    final queryNormalized = _normalize(_transliterate(query));
+
     setState(() {
-      _filteredBranches = _branches.where((branch) {
-        final company = branch['companies'] as Map<String, dynamic>?;
-        final companyName = (company?['name'] as String? ?? '').toLowerCase();
-        final branchName = (branch['name'] as String? ?? '').toLowerCase();
-        return companyName.contains(query) || branchName.contains(query);
-      }).toList();
+      _filteredBranches =
+          _branches.where((branch) {
+            final companyRaw = branch['companies'];
+            final Map<String, dynamic>? company =
+                companyRaw is List
+                    ? (companyRaw.isNotEmpty ? companyRaw.first : null)
+                    : companyRaw as Map<String, dynamic>?;
+
+            final companyName =
+                (company?['name'] as String? ?? '').toLowerCase();
+            final companyDesc =
+                (company?['description'] as String? ?? '').toLowerCase();
+            final branchName = (branch['name'] as String? ?? '').toLowerCase();
+
+            // 1. Прямой поиск (как есть)
+            if (companyName.contains(query) ||
+                branchName.contains(query) ||
+                companyDesc.contains(query)) {
+              return true;
+            }
+
+            // 2. Поиск с нормализацией (транслит + упрощение)
+            final companyNameNorm = _normalize(_transliterate(companyName));
+            final companyDescNorm = _normalize(_transliterate(companyDesc));
+            final branchNameNorm = _normalize(_transliterate(branchName));
+
+            if (companyNameNorm.contains(queryNormalized) ||
+                branchNameNorm.contains(queryNormalized) ||
+                companyDescNorm.contains(queryNormalized)) {
+              return true;
+            }
+
+            return false;
+          }).toList();
     });
   }
 
@@ -53,25 +141,101 @@ class _MapScreenState extends State<MapScreen> {
     bool serviceEnabled;
     LocationPermission permission;
 
+    // 1. Проверяем включена ли геолокация
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
+      if (mounted) {
+        // Показываем диалог как в 2ГИС
+        final openSettings = await showDialog<bool>(
+          context: context,
+          builder:
+              (ctx) => AlertDialog(
+                title: const Text('Геолокация выключена'),
+                content: const Text(
+                  'Для определения вашего местоположения необходимо включить геолокацию.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('Отмена'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    child: const Text('Включить'),
+                  ),
+                ],
+              ),
+        );
+
+        if (openSettings == true) {
+          await Geolocator.openLocationSettings();
+        }
+      }
       return;
     }
 
+    // 2. Проверяем разрешения
     permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Разрешение на геолокацию отклонено')),
+          );
+        }
         return;
       }
     }
-    
-    if (permission == LocationPermission.deniedForever) {
-      return;
-    } 
 
+    if (permission == LocationPermission.deniedForever) {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder:
+              (ctx) => AlertDialog(
+                title: const Text('Доступ запрещен'),
+                content: const Text(
+                  'Вы запретили доступ к геолокации навсегда. Пожалуйста, разрешите доступ в настройках приложения.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Отмена'),
+                  ),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      Geolocator.openAppSettings();
+                    },
+                    child: const Text('Настройки'),
+                  ),
+                ],
+              ),
+        );
+      }
+      return;
+    }
+
+    // 3. Получаем позицию с таймаутом
     try {
-      final position = await Geolocator.getCurrentPosition();
+      // Сначала пробуем получить последнюю известную позицию (это быстро)
+      final lastPosition = await Geolocator.getLastKnownPosition();
+      if (lastPosition != null && mounted) {
+        setState(() {
+          _currentPosition = LatLng(
+            lastPosition.latitude,
+            lastPosition.longitude,
+          );
+        });
+        _mapController.move(_currentPosition!, 15);
+      }
+
+      // Затем пробуем получить точную позицию
+      final position = await Geolocator.getCurrentPosition(
+        timeLimit: const Duration(seconds: 10),
+      );
+
       if (mounted) {
         setState(() {
           _currentPosition = LatLng(position.latitude, position.longitude);
@@ -80,15 +244,26 @@ class _MapScreenState extends State<MapScreen> {
       }
     } catch (e) {
       print("Error getting location: $e");
+      if (mounted && _currentPosition == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Не удалось определить местоположение. Проверьте GPS.',
+            ),
+          ),
+        );
+      }
     }
   }
 
   Future<void> _loadAllBranches() async {
     try {
-      // Загружаем филиалы вместе с данными о компании (логотип, название, скидка)
+      // Загружаем филиалы вместе с данными о компании (логотип, название, скидка, описание)
       final data = await Supabase.instance.client
           .from('company_branches')
-          .select('*, companies(name, logo_url, discount_percentage)');
+          .select(
+            '*, companies(name, logo_url, discount_percentage, description)',
+          );
 
       if (mounted) {
         setState(() {
@@ -116,15 +291,16 @@ class _MapScreenState extends State<MapScreen> {
           decoration: InputDecoration(
             hintText: 'Поиск магазина...',
             border: InputBorder.none,
-            suffixIcon: _searchController.text.isNotEmpty
-                ? IconButton(
-                    icon: const Icon(Icons.clear),
-                    onPressed: () {
-                      _searchController.clear();
-                      FocusScope.of(context).unfocus();
-                    },
-                  )
-                : const Icon(Icons.search),
+            suffixIcon:
+                _searchController.text.isNotEmpty
+                    ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        _searchController.clear();
+                        FocusScope.of(context).unfocus();
+                      },
+                    )
+                    : const Icon(Icons.search),
           ),
         ),
       ),
@@ -138,126 +314,177 @@ class _MapScreenState extends State<MapScreen> {
         },
         child: const Icon(Icons.my_location),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : Stack(
-              children: [
-                FlutterMap(
-                  mapController: _mapController,
-                  options: const MapOptions(
-                    // Центр карты: Бишкек, Кыргызстан
-                    initialCenter: LatLng(42.8746, 74.5698),
-                    initialZoom: 12,
-                  ),
-                  children: [
-                    TileLayer(
-                      // Switch map style based on theme
-                      urlTemplate: Theme.of(context).brightness == Brightness.dark
-                          ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'
-                          : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png',
-                      subdomains: const ['a', 'b', 'c', 'd'],
-                      userAgentPackageName: 'com.example.applearn',
+      body:
+          _loading
+              ? const Center(child: CircularProgressIndicator())
+              : Stack(
+                children: [
+                  FlutterMap(
+                    mapController: _mapController,
+                    options: const MapOptions(
+                      // Центр карты: Бишкек, Кыргызстан
+                      initialCenter: LatLng(42.8746, 74.5698),
+                      initialZoom: 12,
+                      maxZoom:
+                          18.4, // Увеличиваем зум, чтобы было видно детали как в 2ГИС
+                      interactionOptions: InteractionOptions(
+                        flags:
+                            InteractiveFlag.all, // Разрешаем вращение и наклон
+                      ),
                     ),
-                    MarkerLayer(
-                      markers: [
-                        if (_currentPosition != null)
-                          Marker(
-                            point: _currentPosition!,
-                            width: 60,
-                            height: 60,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: Colors.blue.withOpacity(0.3),
-                                shape: BoxShape.circle,
-                                border: Border.all(color: Colors.blue, width: 2),
-                              ),
-                              child: const Center(
-                                child: Icon(
-                                  Icons.person_pin_circle,
-                                  color: Colors.blue,
-                                  size: 30,
+                    children: [
+                      TileLayer(
+                        // Используем более детальные тайлы (OSM), они светлее и привычнее
+                        urlTemplate:
+                            Theme.of(context).brightness == Brightness.dark
+                                ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'
+                                : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        // Для светлой темы берем стандартный OSM (похож на 2ГИС деталями)
+                        subdomains: const ['a', 'b', 'c'],
+                        userAgentPackageName: 'com.example.applearn',
+                      ),
+                      MarkerLayer(
+                        markers: [
+                          if (_currentPosition != null)
+                            Marker(
+                              point: _currentPosition!,
+                              width: 60,
+                              height: 60,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.withOpacity(0.3),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.blue,
+                                    width: 2,
+                                  ),
+                                ),
+                                child: const Center(
+                                  child: Icon(
+                                    Icons.person_pin_circle,
+                                    color: Colors.blue,
+                                    size: 30,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        ..._filteredBranches
-                            .map((branch) {
-                              final lat = branch['latitude'] as double?;
-                              final lng = branch['longitude'] as double?;
-                              final company =
-                                  branch['companies'] as Map<String, dynamic>?;
-                              final logoUrl = company?['logo_url'] as String?;
-                              final name = company?['name'] as String? ?? '';
-                              final isVip = branch['is_vip'] == true;
+                          ..._filteredBranches
+                              .map((branch) {
+                                final lat = branch['latitude'] as double?;
+                                final lng = branch['longitude'] as double?;
+                                final company =
+                                    branch['companies']
+                                        as Map<String, dynamic>?;
+                                final logoUrl = company?['logo_url'] as String?;
+                                final name = company?['name'] as String? ?? '';
+                                final isVip = branch['is_vip'] == true;
 
-                              if (lat == null || lng == null) return null;
+                                if (lat == null || lng == null) return null;
 
-                              final isBigShop =
-                                  isVip || (logoUrl != null && logoUrl.isNotEmpty);
+                                final isBigShop =
+                                    isVip ||
+                                    (logoUrl != null && logoUrl.isNotEmpty);
 
-                              return Marker(
-                                point: LatLng(lat, lng),
-                                width: isBigShop ? 120 : 40,
-                                height: isBigShop ? 80 : 40,
-                                child: GestureDetector(
-                                  onTap: () => _showBranchDetails(branch),
-                                  child: _buildMarkerIcon(
-                                    logoUrl,
-                                    name,
-                                    isBigShop,
+                                return Marker(
+                                  point: LatLng(lat, lng),
+                                  width: isBigShop ? 120 : 40,
+                                  height: isBigShop ? 80 : 40,
+                                  child: GestureDetector(
+                                    onTap: () => _showBranchDetails(branch),
+                                    child: _buildMarkerIcon(
+                                      logoUrl,
+                                      name,
+                                      isBigShop,
+                                    ),
                                   ),
-                                ),
-                              );
-                            })
-                            .whereType<Marker>()
-                            .toList(),
-                      ],
-                    ),
-                  ],
-                ),
-                if (_searchController.text.isNotEmpty && _searchFocusNode.hasFocus)
-                  Container(
-                    color: Theme.of(context).scaffoldBackgroundColor,
-                    child: _filteredBranches.isEmpty
-                        ? const Center(child: Text('Ничего не найдено'))
-                        : ListView.builder(
-                            itemCount: _filteredBranches.length,
-                            itemBuilder: (context, index) {
-                              final branch = _filteredBranches[index];
-                              final company =
-                                  branch['companies'] as Map<String, dynamic>?;
-                              final companyName =
-                                  company?['name'] as String? ?? 'Компания';
-                              final branchName =
-                                  branch['name'] as String? ?? 'Филиал';
-                              final logoUrl = company?['logo_url'] as String?;
-                              final lat = branch['latitude'] as double?;
-                              final lng = branch['longitude'] as double?;
-
-                              return ListTile(
-                                leading: CircleAvatar(
-                                  backgroundImage: logoUrl != null
-                                      ? NetworkImage(logoUrl)
-                                      : null,
-                                  child: logoUrl == null
-                                      ? const Icon(Icons.store)
-                                      : null,
-                                ),
-                                title: Text(companyName),
-                                subtitle: Text(branchName),
-                                onTap: () {
-                                  if (lat != null && lng != null) {
-                                    _mapController.move(LatLng(lat, lng), 15);
-                                    _searchFocusNode.unfocus();
-                                    _showBranchDetails(branch);
-                                  }
-                                },
-                              );
-                            },
-                          ),
+                                );
+                              })
+                              .whereType<Marker>()
+                              .toList(),
+                        ],
+                      ),
+                    ],
                   ),
-              ],
-            ),
+                  // Компас (появляется при вращении)
+                  Positioned(
+                    top: 100,
+                    right: 16,
+                    child: StreamBuilder<MapEvent>(
+                      stream: _mapController.mapEventStream,
+                      builder: (context, snapshot) {
+                        final rotation = _mapController.camera.rotation;
+                        // Показываем компас только если карта повернута
+                        if (rotation == 0) return const SizedBox.shrink();
+
+                        return FloatingActionButton.small(
+                          heroTag: 'compass',
+                          backgroundColor: Theme.of(context).cardColor,
+                          onPressed: () {
+                            _mapController.rotate(0); // Сброс на Север
+                          },
+                          child: Transform.rotate(
+                            angle: rotation * (3.14159 / 180),
+                            child: const Icon(
+                              Icons.navigation,
+                              color: Colors.redAccent,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  if (_searchController.text.isNotEmpty &&
+                      _searchFocusNode.hasFocus)
+                    Container(
+                      color: Theme.of(context).scaffoldBackgroundColor,
+                      child:
+                          _filteredBranches.isEmpty
+                              ? const Center(child: Text('Ничего не найдено'))
+                              : ListView.builder(
+                                itemCount: _filteredBranches.length,
+                                itemBuilder: (context, index) {
+                                  final branch = _filteredBranches[index];
+                                  final company =
+                                      branch['companies']
+                                          as Map<String, dynamic>?;
+                                  final companyName =
+                                      company?['name'] as String? ?? 'Компания';
+                                  final branchName =
+                                      branch['name'] as String? ?? 'Филиал';
+                                  final logoUrl =
+                                      company?['logo_url'] as String?;
+                                  final lat = branch['latitude'] as double?;
+                                  final lng = branch['longitude'] as double?;
+
+                                  return ListTile(
+                                    leading: CircleAvatar(
+                                      backgroundImage:
+                                          logoUrl != null
+                                              ? NetworkImage(logoUrl)
+                                              : null,
+                                      child:
+                                          logoUrl == null
+                                              ? const Icon(Icons.store)
+                                              : null,
+                                    ),
+                                    title: Text(companyName),
+                                    subtitle: Text(branchName),
+                                    onTap: () {
+                                      if (lat != null && lng != null) {
+                                        _mapController.move(
+                                          LatLng(lat, lng),
+                                          15,
+                                        );
+                                        _searchFocusNode.unfocus();
+                                        _showBranchDetails(branch);
+                                      }
+                                    },
+                                  );
+                                },
+                              ),
+                    ),
+                ],
+              ),
     );
   }
 
@@ -325,21 +552,77 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  Future<void> _openExternalMap(LatLng destination) async {
+    final lat = destination.latitude;
+    final lng = destination.longitude;
+
+    // 1. Пробуем открыть 2ГИС (dgis://)
+    final dgisUrl = Uri.parse(
+      "dgis://2gis.ru/routeSearch/rsType/car/to/$lng,$lat",
+    );
+
+    // 2. Пробуем Google Maps (google.navigation:)
+    final googleMapsUrl = Uri.parse("google.navigation:q=$lat,$lng&mode=d");
+
+    // 3. Универсальный geo: URI (для Яндекс.Карт и других)
+    final geoUrl = Uri.parse("geo:$lat,$lng?q=$lat,$lng");
+
+    // 4. Веб-версия Google Maps (fallback)
+    final webUrl = Uri.parse(
+      "https://www.google.com/maps/dir/?api=1&destination=$lat,$lng",
+    );
+
+    try {
+      if (await canLaunchUrl(dgisUrl)) {
+        await launchUrl(dgisUrl);
+      } else if (await canLaunchUrl(googleMapsUrl)) {
+        await launchUrl(googleMapsUrl);
+      } else if (await canLaunchUrl(geoUrl)) {
+        await launchUrl(geoUrl);
+      } else {
+        await launchUrl(webUrl, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Не удалось открыть карту: $e')));
+      }
+    }
+  }
+
   void _showBranchDetails(Map<String, dynamic> branch) {
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true, // Позволяет шторке быть выше
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => BranchDetailsSheet(branch: branch),
+      builder:
+          (ctx) => BranchDetailsSheet(
+            branch: branch,
+            onBuildRoute: () {
+              final lat = branch['latitude'] as double?;
+              final lng = branch['longitude'] as double?;
+              if (lat != null && lng != null) {
+                Navigator.pop(ctx);
+                _openExternalMap(LatLng(lat, lng));
+              }
+            },
+          ),
     );
   }
 }
 
 class BranchDetailsSheet extends StatefulWidget {
   final Map<String, dynamic> branch;
-  const BranchDetailsSheet({super.key, required this.branch});
+  final VoidCallback onBuildRoute; // Callback для построения маршрута
+
+  const BranchDetailsSheet({
+    super.key,
+    required this.branch,
+    required this.onBuildRoute,
+  });
 
   @override
   State<BranchDetailsSheet> createState() => _BranchDetailsSheetState();
@@ -372,7 +655,9 @@ class _BranchDetailsSheetState extends State<BranchDetailsSheet> {
 
       if (ratings.isNotEmpty) {
         final total = ratings.fold<double>(
-            0, (sum, item) => sum + (item['rating'] as int));
+          0,
+          (sum, item) => sum + (item['rating'] as int),
+        );
         _averageRating = total / ratings.length;
         _ratingCount = ratings.length;
       }
@@ -399,33 +684,30 @@ class _BranchDetailsSheetState extends State<BranchDetailsSheet> {
     try {
       final userId = Supabase.instance.client.auth.currentUser?.id;
       if (userId == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Войдите, чтобы оценить')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Войдите, чтобы оценить')));
         return;
       }
 
-      await Supabase.instance.client.from('branch_ratings').upsert(
-        {
-          'user_id': userId,
-          'branch_id': widget.branch['id'],
-          'rating': rating.toInt(),
-        },
-        onConflict: 'user_id, branch_id',
-      );
+      await Supabase.instance.client.from('branch_ratings').upsert({
+        'user_id': userId,
+        'branch_id': widget.branch['id'],
+        'rating': rating.toInt(),
+      }, onConflict: 'user_id, branch_id');
 
       // Обновляем данные
       _fetchRatings();
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Спасибо за оценку!')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Спасибо за оценку!')));
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
     }
   }
 
@@ -472,12 +754,15 @@ class _BranchDetailsSheetState extends State<BranchDetailsSheet> {
                 )
               else
                 const Center(
-                    child: Icon(Icons.store, size: 80, color: Colors.deepPurple)),
+                  child: Icon(Icons.store, size: 80, color: Colors.deepPurple),
+                ),
               const SizedBox(height: 15),
               Text(
                 name,
-                style:
-                    const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 5),
@@ -487,7 +772,7 @@ class _BranchDetailsSheetState extends State<BranchDetailsSheet> {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 20),
-              
+
               // Блок рейтинга
               Container(
                 padding: const EdgeInsets.all(15),
@@ -506,10 +791,9 @@ class _BranchDetailsSheetState extends State<BranchDetailsSheet> {
                     ),
                     RatingBarIndicator(
                       rating: _averageRating,
-                      itemBuilder: (context, index) => const Icon(
-                        Icons.star,
-                        color: Colors.amber,
-                      ),
+                      itemBuilder:
+                          (context, index) =>
+                              const Icon(Icons.star, color: Colors.amber),
                       itemCount: 5,
                       itemSize: 20.0,
                       direction: Axis.horizontal,
@@ -521,7 +805,7 @@ class _BranchDetailsSheetState extends State<BranchDetailsSheet> {
                   ],
                 ),
               ),
-              
+
               const SizedBox(height: 20),
               const Text(
                 'Ваша оценка:',
@@ -537,37 +821,54 @@ class _BranchDetailsSheetState extends State<BranchDetailsSheet> {
                   allowHalfRating: false,
                   itemCount: 5,
                   itemPadding: const EdgeInsets.symmetric(horizontal: 4.0),
-                  itemBuilder: (context, _) => const Icon(
-                    Icons.star,
-                    color: Colors.amber,
-                  ),
+                  itemBuilder:
+                      (context, _) =>
+                          const Icon(Icons.star, color: Colors.amber),
                   onRatingUpdate: _submitRating,
                 ),
               ),
 
               const SizedBox(height: 30),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-                decoration: BoxDecoration(
-                  color: Colors.green,
-                  borderRadius: BorderRadius.circular(30),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.percent, color: Colors.white),
-                    const SizedBox(width: 10),
-                    Text(
-                      'Скидка $discount%',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 20,
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 15),
+                      ),
+                      onPressed: widget.onBuildRoute,
+                      icon: const Icon(Icons.directions),
+                      label: const Text('Маршрут'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 15),
+                      decoration: BoxDecoration(
+                        color: Colors.green,
+                        borderRadius: BorderRadius.circular(30),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.percent, color: Colors.white),
+                          const SizedBox(width: 10),
+                          Text(
+                            '$discount%',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 20,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
               const SizedBox(height: 20),
             ],
