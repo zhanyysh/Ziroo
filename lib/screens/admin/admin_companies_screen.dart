@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'company_branches_screen.dart';
+import 'company_events_screen.dart';
 import '../../services/admin_logger.dart';
 
 class CompaniesScreen extends StatefulWidget {
@@ -108,6 +109,15 @@ class _CompanyFormScreenState extends State<CompanyFormScreen> {
   final _nameCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
   final _discountCtrl = TextEditingController();
+  String _selectedCategory = 'Другое';
+  final List<String> _categories = [
+    'Еда',
+    'Одежда',
+    'Электроника',
+    'Услуги',
+    'Развлечения',
+    'Другое'
+  ];
   bool loading = false;
   File? _logoFile;
   String? _logoUrl;
@@ -121,6 +131,7 @@ class _CompanyFormScreenState extends State<CompanyFormScreen> {
     _discountCtrl.text =
         (widget.company?['discount_percentage'] ?? 0).toString();
     _logoUrl = widget.company?['logo_url'];
+    _selectedCategory = widget.company?['category'] ?? 'Другое';
   }
 
   Future<void> _pickLogo() async {
@@ -180,6 +191,7 @@ class _CompanyFormScreenState extends State<CompanyFormScreen> {
                   'description': _descCtrl.text.trim(),
                   'discount_percentage': discount,
                   'created_by': currentUserId,
+                  'category': _selectedCategory,
                 })
                 .select('id')
                 .single();
@@ -222,6 +234,7 @@ class _CompanyFormScreenState extends State<CompanyFormScreen> {
               'name': _nameCtrl.text.trim(),
               'description': _descCtrl.text.trim(),
               'discount_percentage': discount,
+              'category': _selectedCategory,
               'logo_url': newLogoUrl,
             })
             .eq('id', companyId);
@@ -364,6 +377,25 @@ class _CompanyFormScreenState extends State<CompanyFormScreen> {
                 maxLines: 3,
               ),
               const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: _selectedCategory,
+                decoration: const InputDecoration(
+                  labelText: 'Категория',
+                  border: OutlineInputBorder(),
+                ),
+                items: _categories.map((String category) {
+                  return DropdownMenuItem<String>(
+                    value: category,
+                    child: Text(category),
+                  );
+                }).toList(),
+                onChanged: (String? newValue) {
+                  setState(() {
+                    _selectedCategory = newValue!;
+                  });
+                },
+              ),
+              const SizedBox(height: 16),
               TextField(
                 controller: _discountCtrl,
                 keyboardType: TextInputType.number,
@@ -390,6 +422,24 @@ class _CompanyFormScreenState extends State<CompanyFormScreen> {
                     );
                   },
                 ),
+              if (widget.company != null) ...[
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.event),
+                  label: const Text('Управление акциями и ивентами'),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder:
+                            (_) => CompanyEventsScreen(
+                              companyId: widget.company!['id'],
+                            ),
+                      ),
+                    );
+                  },
+                ),
+              ],
               const SizedBox(height: 30),
               SizedBox(
                 width: double.infinity,

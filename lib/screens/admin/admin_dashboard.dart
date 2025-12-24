@@ -6,6 +6,7 @@ import 'admin_settings_screen.dart';
 import 'admin_home_screen.dart';
 import '../map_screen.dart';
 import 'admin_companies_screen.dart';
+import 'qr_scanner_screen.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
