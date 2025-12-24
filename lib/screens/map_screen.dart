@@ -944,6 +944,10 @@ class _ReviewsSectionState extends State<_ReviewsSection> {
           _error = e.toString();
         });
       }
+    }
+  }
+
+  Future<void> _addReview() async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
