@@ -74,6 +74,7 @@ flutter:
 
   assets:
     - assets/images/logo.jpg
+    - assets/images/g-logo.svg
 
 
   # To add assets to your application, add an assets section, like this:
