@@ -1,34 +1,35 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:qr_flutter/qr_flutter.dart';
-import 'user/user_main_screen.dart';
-import 'user/user_history_screen.dart';
-import 'user/user_settings_screen.dart';
-import 'map_screen.dart';
+import 'package:go_router/go_router.dart';
 
 class UserScreen extends StatefulWidget {
-  const UserScreen({super.key});
+  final StatefulNavigationShell navigationShell;
+
+  const UserScreen({
+    super.key,
+    required this.navigationShell,
+  });
 
   @override
   State<UserScreen> createState() => _UserScreenState();
 }
 
 class _UserScreenState extends State<UserScreen> {
-  int _selectedIndex = 0;
-
-  final List<Widget> _screens = [
-    const UserMainScreen(),
-    const MapScreen(),
-    const SizedBox(), // Placeholder for QR button
-    const UserHistoryScreen(),
-    const UserSettingsScreen(),
-  ];
-
+  
   void _onItemTapped(int index) {
-    if (index == 2) return; // QR button handled separately
-    setState(() {
-      _selectedIndex = index;
-    });
+    // Индекс 2 зарезервирован для QR кнопки
+    if (index == 2) return; 
+    
+    // Корректируем индекс, так как в navigationShell всего 4 ветки, а кнопок 5
+    // Кнопки: 0(Home), 1(Map), 2(QR), 3(History), 4(Settings)
+    // Ветки:  0(Home), 1(Map),        2(History), 3(Settings)
+    final branchIndex = index > 2 ? index - 1 : index;
+
+    widget.navigationShell.goBranch(
+      branchIndex,
+      initialLocation: index == widget.navigationShell.currentIndex,
+    );
   }
 
   void _showQrCode() {
@@ -154,11 +155,15 @@ class _UserScreenState extends State<UserScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Вычисляем текущий индекс для подсветки кнопок
+    // Если текущая ветка 0 или 1 -> индекс совпадает
+    // Если текущая ветка 2 или 3 -> индекс + 1 (из-за пропуска QR)
+    final currentIndex = widget.navigationShell.currentIndex < 2 
+        ? widget.navigationShell.currentIndex 
+        : widget.navigationShell.currentIndex + 1;
+
     return Scaffold(
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: _screens,
-      ),
+      body: widget.navigationShell, // Здесь отображается текущая ветка навигации
       floatingActionButton: SizedBox(
         width: 70,
         height: 70,
@@ -177,19 +182,19 @@ class _UserScreenState extends State<UserScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
-            _buildNavItem(0, Icons.home, 'Главная'),
-            _buildNavItem(1, Icons.map, 'Карта'),
+            _buildNavItem(0, Icons.home, 'Главная', currentIndex),
+            _buildNavItem(1, Icons.map, 'Карта', currentIndex),
             const SizedBox(width: 48), // Space for FAB
-            _buildNavItem(3, Icons.history, 'История'),
-            _buildNavItem(4, Icons.settings, 'Ещё'),
+            _buildNavItem(3, Icons.history, 'История', currentIndex),
+            _buildNavItem(4, Icons.settings, 'Ещё', currentIndex),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildNavItem(int index, IconData icon, String label) {
-    final isSelected = _selectedIndex == index;
+  Widget _buildNavItem(int index, IconData icon, String label, int currentIndex) {
+    final isSelected = currentIndex == index;
     return InkWell(
       onTap: () => _onItemTapped(index),
       borderRadius: BorderRadius.circular(12),

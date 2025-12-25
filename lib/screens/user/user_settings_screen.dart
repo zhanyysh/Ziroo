@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:go_router/go_router.dart';
 import '../../services/theme_service.dart';
 import 'edit_profile_screen.dart';
 
@@ -317,7 +318,7 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
                       ),
                     );
                     if (result == true) {
-                      setState(() {}); // Обновляем экран, если профиль изменился
+                      _loadProfile(); // Перезагружаем профиль
                     }
                   },
                 ),
@@ -347,23 +348,28 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
                     ),
                   ),
                   onTap: () async {
+                    // Сохраняем ссылку на GoRouter или контекст экрана
+                    final goRouter = GoRouter.of(context);
+                    
                     showDialog(
                       context: context,
                       builder:
-                          (context) => AlertDialog(
+                          (dialogContext) => AlertDialog(
                             title: const Text('Выход'),
                             content: const Text(
                               'Вы уверены, что хотите выйти?',
                             ),
                             actions: [
                               TextButton(
-                                onPressed: () => Navigator.pop(context),
+                                onPressed: () => Navigator.pop(dialogContext),
                                 child: const Text('Отмена'),
                               ),
                               TextButton(
                                 onPressed: () async {
-                                  Navigator.pop(context);
+                                  Navigator.pop(dialogContext); // Закрываем диалог
                                   await Supabase.instance.client.auth.signOut();
+                                  // Используем сохраненный роутер для перехода
+                                  goRouter.go('/login');
                                 },
                                 child: const Text(
                                   'Выйти',

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:go_router/go_router.dart';
 import 'company_details_screen.dart';
 
 class UserMainScreen extends StatefulWidget {
@@ -295,15 +296,12 @@ class _UserMainScreenState extends State<UserMainScreen> {
                                 vertical: 8,
                               ),
                               child: ListTile(
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => CompanyDetailsScreen(
-                                        company: company,
-                                      ),
-                                    ),
-                                  ).then((_) => _loadData()); // Reload to sync favorites
+                                onTap: () async {
+                                  await context.push(
+                                    '/home/company',
+                                    extra: company,
+                                  );
+                                  _loadData(); // Reload to sync favorites
                                 },
                                 leading:
                                     company['logo_url'] != null

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:go_router/go_router.dart';
 import 'signup_screen.dart';
 import 'phone_auth_screen.dart';
 
@@ -24,7 +25,11 @@ class _LoginScreenState extends State<LoginScreen> {
         email: _email.text.trim(),
         password: _password.text,
       );
-      // No Navigator! AuthWrapper auto-redirects
+      
+      if (mounted) {
+        // Переходим на корневой маршрут, там RoleCheckScreen сам решит куда дальше
+        context.go('/'); 
+      }
     } on AuthException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -80,6 +85,10 @@ class _LoginScreenState extends State<LoginScreen> {
         idToken: idToken,
         accessToken: authorization.accessToken,
       );
+      
+      if (mounted) {
+        context.go('/');
+      }
     } on AuthException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

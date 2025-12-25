@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:go_router/go_router.dart';
 
 class PhoneAuthScreen extends StatefulWidget {
   const PhoneAuthScreen({super.key});
@@ -16,7 +17,7 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
   bool _isPasswordVisible = false;
 
   Future<void> _submit() async {
-    final phone = _phoneController.text.trim();
+    var phone = _phoneController.text.trim();
     final password = _passwordController.text.trim();
 
     if (phone.isEmpty || password.isEmpty) {
@@ -24,6 +25,27 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
         const SnackBar(content: Text('Заполните все поля')),
       );
       return;
+    }
+
+    // Форматирование номера телефона (для Кыргызстана)
+    // Удаляем все лишние символы (пробелы, скобки, тире)
+    phone = phone.replaceAll(RegExp(r'[^\d+]'), '');
+
+    // Если начинается с 0, заменяем на +996
+    if (phone.startsWith('0')) {
+      phone = '+996${phone.substring(1)}';
+    } 
+    // Если начинается с 996 (без плюса), добавляем плюс
+    else if (phone.startsWith('996')) {
+      phone = '+$phone';
+    }
+    // Если не начинается с +, и длина похожа на местный номер (9 цифр), добавляем +996
+    else if (!phone.startsWith('+') && phone.length == 9) {
+      phone = '+996$phone';
+    }
+    // Если пользователь ввел просто 555123456 (без 0), тоже добавляем +996
+    else if (!phone.startsWith('+') && phone.length == 9) {
+       phone = '+996$phone';
     }
 
     setState(() => _isLoading = true);
@@ -43,8 +65,9 @@ class _PhoneAuthScreenState extends State<PhoneAuthScreen> {
       }
 
       if (mounted) {
-        // AuthWrapper will handle navigation
-        Navigator.pop(context);
+        // Используем go_router для перехода на главную
+        // Это сработает, так как AuthWrapper/RoleCheckScreen перенаправят куда надо
+        context.go('/');
       }
     } on AuthException catch (e) {
       if (mounted) {

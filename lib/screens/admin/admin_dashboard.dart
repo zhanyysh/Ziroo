@@ -1,43 +1,28 @@
-// lib/screens/admin_dashboard.dart
+// lib/screens/admin/admin_dashboard.dart
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'admin_history_screen.dart';
-import 'admin_settings_screen.dart';
-import 'admin_home_screen.dart';
-import '../map_screen.dart';
-import 'admin_companies_screen.dart';
-import 'qr_scanner_screen.dart';
+import 'package:go_router/go_router.dart';
 
-class AdminDashboard extends StatefulWidget {
-  const AdminDashboard({super.key});
+class AdminDashboard extends StatelessWidget {
+  final StatefulNavigationShell navigationShell;
 
-  @override
-  State<AdminDashboard> createState() => _AdminDashboardState();
-}
-
-class _AdminDashboardState extends State<AdminDashboard> {
-  int _selectedIndex = 2; // Default to "Main Window" (Home)
-
-  final List<Widget> _screens = [
-    const HistoryScreen(),
-    const CompaniesScreen(), // Stores/Shops
-    const AdminHomeScreen(), // Main Window
-    const MapScreen(),
-    const SettingsScreen(),
-  ];
+  const AdminDashboard({
+    super.key,
+    required this.navigationShell,
+  });
 
   void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
+    navigationShell.goBranch(
+      index,
+      initialLocation: index == navigationShell.currentIndex,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _screens[_selectedIndex],
+      body: navigationShell,
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
+        selectedIndex: navigationShell.currentIndex,
         onDestinationSelected: _onItemTapped,
         destinations: const [
           NavigationDestination(icon: Icon(Icons.history), label: 'История'),

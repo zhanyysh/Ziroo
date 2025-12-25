@@ -1,7 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/material.dart';
-import 'widgets/auth_wrapper.dart';
 import 'services/theme_service.dart';
+import 'router.dart'; // Импортируем наш роутер
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,7 +25,8 @@ class MyApp extends StatelessWidget {
     return AnimatedBuilder(
       animation: ThemeService(),
       builder: (context, _) {
-        return MaterialApp(
+        return MaterialApp.router( // Используем router конструктор
+          routerConfig: router,    // Подключаем наш конфиг
           title: 'Learn Flutter and Supabase',
           debugShowCheckedModeBanner: false,
           themeMode: ThemeService().themeMode,
@@ -65,7 +66,6 @@ class MyApp extends StatelessWidget {
               unselectedItemColor: Colors.grey,
             ),
           ),
-          home: const AuthWrapper(),
         );
       },
     );
