@@ -7,7 +7,8 @@ import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class MapScreen extends StatefulWidget {
-  const MapScreen({super.key});
+  final LatLng? initialLocation;
+  const MapScreen({super.key, this.initialLocation});
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -331,13 +332,15 @@ class _MapScreenState extends State<MapScreen> {
                     options: MapOptions(
                       onMapReady: () {
                         _isMapReady = true;
-                        if (_currentPosition != null) {
+                        if (widget.initialLocation != null) {
+                          _mapController.move(widget.initialLocation!, 16);
+                        } else if (_currentPosition != null) {
                           _mapController.move(_currentPosition!, 15);
                         }
                       },
                       // Центр карты: Бишкек, Кыргызстан
-                      initialCenter: const LatLng(42.8746, 74.5698),
-                      initialZoom: 12,
+                      initialCenter: widget.initialLocation ?? const LatLng(42.8746, 74.5698),
+                      initialZoom: widget.initialLocation != null ? 16 : 12,
                       maxZoom:
                           18.4, // Увеличиваем зум, чтобы было видно детали как в 2ГИС
                       interactionOptions: InteractionOptions(

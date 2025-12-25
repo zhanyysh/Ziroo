@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:latlong2/latlong.dart';
 import '../map_screen.dart';
 
 class CompanyDetailsScreen extends StatefulWidget {
@@ -109,87 +110,193 @@ class _CompanyDetailsScreenState extends State<CompanyDetailsScreen> {
     }
   }
 
-  void _openMap() {
+  void _openMap({double? lat, double? lng}) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const MapScreen()),
+      MaterialPageRoute(
+        builder:
+            (_) => MapScreen(
+              initialLocation:
+                  lat != null && lng != null ? LatLng(lat, lng) : null,
+            ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final company = widget.company;
+    final theme = Theme.of(context);
     
     return Scaffold(
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
-            expandedHeight: 200,
+            expandedHeight: 260,
             pinned: true,
-            flexibleSpace: FlexibleSpaceBar(
-              title: Text(company['name'] ?? 'Магазин'),
-              background: company['logo_url'] != null
-                  ? Image.network(
-                      company['logo_url'],
-                      fit: BoxFit.cover,
-                      errorBuilder: (_,__,___) => Container(color: Colors.grey),
-                    )
-                  : Container(
-                      color: Colors.deepPurple,
-                      child: const Icon(Icons.store, size: 60, color: Colors.white),
-                    ),
+            stretch: true,
+            backgroundColor: theme.scaffoldBackgroundColor,
+            leading: Container(
+              margin: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: theme.scaffoldBackgroundColor.withOpacity(0.5),
+                shape: BoxShape.circle,
+              ),
+              child: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => Navigator.pop(context),
+              ),
             ),
             actions: [
-              IconButton(
-                icon: Icon(
-                  _isFavorite ? Icons.favorite : Icons.favorite_border,
-                  color: _isFavorite ? Colors.red : Colors.white,
+              Container(
+                margin: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: theme.scaffoldBackgroundColor.withOpacity(0.5),
+                  shape: BoxShape.circle,
                 ),
-                onPressed: _toggleFavorite,
+                child: IconButton(
+                  icon: Icon(
+                    _isFavorite ? Icons.favorite : Icons.favorite_border,
+                    color: _isFavorite ? Colors.red : theme.iconTheme.color,
+                  ),
+                  onPressed: _toggleFavorite,
+                ),
               ),
             ],
+            flexibleSpace: FlexibleSpaceBar(
+              stretchModes: const [StretchMode.zoomBackground],
+              background: Stack(
+                fit: StackFit.expand,
+                children: [
+                  company['logo_url'] != null
+                      ? Image.network(
+                          company['logo_url'],
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(color: Colors.grey),
+                        )
+                      : Container(
+                          color: Colors.deepPurple,
+                          child: const Icon(Icons.store, size: 80, color: Colors.white),
+                        ),
+                  // Gradient Overlay
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withOpacity(0.3),
+                          Colors.transparent,
+                          Colors.black.withOpacity(0.8),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 16,
+                    left: 16,
+                    right: 16,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          company['name'] ?? 'Магазин',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 28,
+                            fontWeight: FontWeight.bold,
+                            shadows: [Shadow(color: Colors.black45, blurRadius: 8)],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.all(16.0),
+              padding: const EdgeInsets.all(20.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Discount Badge
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.green,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      'Скидка ${company['discount_percentage']}%',
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  
-                  // Description
-                  const Text(
-                    'О компании',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    company['description'] ?? 'Описание отсутствует',
-                    style: const TextStyle(fontSize: 16, height: 1.5),
+                  // Tags Row (Category, Discount)
+                  Row(
+                    children: [
+                      if (company['category'] != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.primaryContainer,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            company['category'],
+                            style: TextStyle(
+                              color: theme.colorScheme.onPrimaryContainer,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      if (company['category'] != null) const SizedBox(width: 8),
+                      if (company['discount_percentage'] != null && company['discount_percentage'] > 0)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade100,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: Colors.red.shade200),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.local_offer, size: 16, color: Colors.red.shade700),
+                              const SizedBox(width: 4),
+                              Text(
+                                '-${company['discount_percentage']}%',
+                                style: TextStyle(
+                                  color: Colors.red.shade700,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(height: 24),
 
+                  // Description
+                  Text(
+                    'О компании',
+                    style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    company['description'] ?? 'Описание отсутствует',
+                    style: theme.textTheme.bodyLarge?.copyWith(
+                      height: 1.6,
+                      color: theme.textTheme.bodyLarge?.color?.withOpacity(0.8),
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+
                   // Events Section
                   if (_events.isNotEmpty) ...[
-                    const Text(
-                      'Акции и новости',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Акции и новости',
+                          style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 16),
                     SizedBox(
-                      height: 180,
+                      height: 240,
                       child: ListView.builder(
                         scrollDirection: Axis.horizontal,
                         itemCount: _events.length,
@@ -197,15 +304,15 @@ class _CompanyDetailsScreenState extends State<CompanyDetailsScreen> {
                           final event = _events[index];
                           return Container(
                             width: 280,
-                            margin: const EdgeInsets.only(right: 12),
+                            margin: const EdgeInsets.only(right: 16, bottom: 8),
                             decoration: BoxDecoration(
-                              color: Theme.of(context).cardColor,
-                              borderRadius: BorderRadius.circular(12),
+                              color: theme.cardColor,
+                              borderRadius: BorderRadius.circular(16),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.1),
-                                  blurRadius: 4,
-                                  offset: const Offset(0, 2),
+                                  color: Colors.black.withOpacity(0.05),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
                                 ),
                               ],
                             ),
@@ -213,41 +320,49 @@ class _CompanyDetailsScreenState extends State<CompanyDetailsScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Expanded(
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                                      image: event['image_url'] != null
-                                          ? DecorationImage(
-                                              image: NetworkImage(event['image_url']),
-                                              fit: BoxFit.cover,
-                                            )
-                                          : null,
-                                      color: Colors.grey[300],
-                                    ),
-                                    child: event['image_url'] == null
-                                        ? const Center(child: Icon(Icons.image_not_supported))
-                                        : null,
+                                  flex: 3,
+                                  child: ClipRRect(
+                                    borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                                    child: event['image_url'] != null
+                                        ? Image.network(
+                                            event['image_url'],
+                                            fit: BoxFit.cover,
+                                            width: double.infinity,
+                                            errorBuilder: (_, __, ___) => Container(
+                                              color: Colors.grey[300],
+                                              child: const Icon(Icons.image_not_supported),
+                                            ),
+                                          )
+                                        : Container(
+                                            color: theme.colorScheme.surfaceContainerHighest,
+                                            child: const Center(child: Icon(Icons.image, size: 40)),
+                                          ),
                                   ),
                                 ),
-                                Padding(
-                                  padding: const EdgeInsets.all(12),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        event['title'] ?? '',
-                                        style: const TextStyle(fontWeight: FontWeight.bold),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      if (event['description'] != null)
+                                Expanded(
+                                  flex: 2,
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(12),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
                                         Text(
-                                          event['description'],
-                                          style: Theme.of(context).textTheme.bodySmall,
-                                          maxLines: 2,
+                                          event['title'] ?? '',
+                                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                          maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                         ),
-                                    ],
+                                        const SizedBox(height: 4),
+                                        if (event['description'] != null)
+                                          Text(
+                                            event['description'],
+                                            style: theme.textTheme.bodySmall,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ],
@@ -256,46 +371,86 @@ class _CompanyDetailsScreenState extends State<CompanyDetailsScreen> {
                         },
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 32),
                   ],
 
                   // Branches Section
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
+                      Text(
                         'Филиалы',
-                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
                       ),
                       TextButton.icon(
                         onPressed: _openMap,
-                        icon: const Icon(Icons.map),
+                        icon: const Icon(Icons.map_outlined),
                         label: const Text('На карте'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: theme.colorScheme.primary,
+                        ),
                       ),
                     ],
                   ),
+                  const SizedBox(height: 8),
                   if (_loading)
                     const Center(child: CircularProgressIndicator())
                   else if (_branches.isEmpty)
-                    const Text('Нет информации о филиалах')
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 20),
+                      child: Center(
+                        child: Text(
+                          'Нет информации о филиалах',
+                          style: theme.textTheme.bodyMedium?.copyWith(color: Colors.grey),
+                        ),
+                      ),
+                    )
                   else
-                    ListView.builder(
+                    ListView.separated(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: _branches.length,
+                      separatorBuilder: (context, index) => const SizedBox(height: 12),
                       itemBuilder: (context, index) {
                         final branch = _branches[index];
-                        return ListTile(
-                          leading: const Icon(Icons.location_on, color: Colors.red),
-                          title: Text(branch['name'] ?? 'Филиал'),
-                          subtitle: Text('${branch['latitude']}, ${branch['longitude']}'),
-                          onTap: () {
-                            _openMap();
-                          },
+                        return Card(
+                          elevation: 0,
+                          color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: BorderSide(color: theme.dividerColor.withOpacity(0.1)),
+                          ),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            leading: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.primary.withOpacity(0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(Icons.location_on, color: theme.colorScheme.primary),
+                            ),
+                            title: Text(
+                              branch['name'] ?? 'Филиал',
+                              style: const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            subtitle: Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                branch['address'] ?? '${branch['latitude']}, ${branch['longitude']}',
+                                style: theme.textTheme.bodySmall,
+                              ),
+                            ),
+                            trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+                            onTap: () {
+                              final lat = branch['latitude'] as double?;
+                              final lng = branch['longitude'] as double?;
+                              _openMap(lat: lat, lng: lng);
+                            },
+                          ),
                         );
                       },
                     ),
-                    
                   const SizedBox(height: 40),
                 ],
               ),
