@@ -15,6 +15,11 @@ import 'screens/admin/admin_history_screen.dart';
 import 'screens/admin/admin_companies_screen.dart';
 import 'screens/admin/admin_home_screen.dart';
 import 'screens/admin/admin_settings_screen.dart';
+import 'screens/manager/manager_dashboard.dart';
+import 'screens/manager/manager_home_screen.dart';
+import 'screens/manager/manager_scan_screen.dart';
+import 'screens/manager/manager_history_screen.dart';
+import 'screens/manager/manager_settings_screen.dart';
 import 'widgets/auth_wrapper.dart';
 
 // Ключи навигации нужны для управления стеком
@@ -85,6 +90,51 @@ final router = GoRouter(
             GoRoute(
               path: '/admin/settings',
               builder: (context, state) => const SettingsScreen(),
+            ),
+          ],
+        ),
+      ],
+    ),
+
+    // Панель менеджера (ShellRoute)
+    StatefulShellRoute.indexedStack(
+      builder: (context, state, navigationShell) {
+        return ManagerDashboard(navigationShell: navigationShell);
+      },
+      branches: [
+        // Ветка 0: Главная
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/manager/home',
+              builder: (context, state) => const ManagerHomeScreen(),
+            ),
+          ],
+        ),
+        // Ветка 1: Сканер QR
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/manager/scan',
+              builder: (context, state) => const ManagerScanScreen(),
+            ),
+          ],
+        ),
+        // Ветка 2: История транзакций
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/manager/history',
+              builder: (context, state) => const ManagerHistoryScreen(),
+            ),
+          ],
+        ),
+        // Ветка 3: Настройки
+        StatefulShellBranch(
+          routes: [
+            GoRoute(
+              path: '/manager/settings',
+              builder: (context, state) => const ManagerSettingsScreen(),
             ),
           ],
         ),

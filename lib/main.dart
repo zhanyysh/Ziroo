@@ -25,8 +25,9 @@ class MyApp extends StatelessWidget {
     return AnimatedBuilder(
       animation: ThemeService(),
       builder: (context, _) {
-        return MaterialApp.router( // Используем router конструктор
-          routerConfig: router,    // Подключаем наш конфиг
+        return MaterialApp.router(
+          // Используем router конструктор
+          routerConfig: router, // Подключаем наш конфиг
           title: 'Learn Flutter and Supabase',
           debugShowCheckedModeBanner: false,
           themeMode: ThemeService().themeMode,
@@ -53,7 +54,7 @@ class MyApp extends StatelessWidget {
               elevation: 0,
               backgroundColor: Color(0xFF1E1E1E),
             ),
-            cardTheme: CardTheme(
+            cardTheme: CardThemeData(
               color: const Color(0xFF1E1E1E),
               elevation: 2,
               shape: RoundedRectangleBorder(
