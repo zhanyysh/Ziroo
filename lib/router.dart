@@ -6,7 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'screens/login_screen.dart';
 import 'screens/user_screen.dart';
 import 'screens/user/user_main_screen.dart';
-import 'screens/map_screen.dart';
+import 'screens/map/map_screen.dart';
 import 'screens/user/user_history_screen.dart';
 import 'screens/user/user_settings_screen.dart';
 import 'screens/user/company_details_screen.dart';

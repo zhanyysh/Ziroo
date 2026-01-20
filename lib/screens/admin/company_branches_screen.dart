@@ -68,7 +68,7 @@ class _CompanyBranchesScreenState extends State<CompanyBranchesScreen> {
   }
 
   void _showAddDialog() {
-    bool isVip = false;
+    int mapPriority = 3; // Default to Small (3)
     LatLng tempLocation = _selectedLocation;
 
     showDialog(
@@ -83,12 +83,13 @@ class _CompanyBranchesScreenState extends State<CompanyBranchesScreen> {
                 contentPadding: EdgeInsets.zero,
                 content: SizedBox(
                   width: double.maxFinite,
-                  height: 500,
+                  height: 600,
                   child: Column(
                     children: [
                       Padding(
                         padding: const EdgeInsets.all(16.0),
                         child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
                               'Добавить филиал',
@@ -109,19 +110,24 @@ class _CompanyBranchesScreenState extends State<CompanyBranchesScreen> {
                                 ),
                               ),
                             ),
-                            const SizedBox(height: 10),
-                            Row(
-                              children: [
-                                const Text('Большой магазин (VIP):'),
-                                const Spacer(),
-                                Switch(
-                                  value: isVip,
-                                  onChanged: (val) {
-                                    setState(() => isVip = val);
-                                  },
-                                  activeColor: const Color(0xFF00A2FF),
-                                ),
-                              ],
+                            const SizedBox(height: 15),
+                            const Text('Размер на карте:', style: TextStyle(fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 8),
+                            SizedBox(
+                              width: double.infinity,
+                              child: SegmentedButton<int>(
+                                segments: const [
+                                  ButtonSegment<int>(value: 3, label: Text('Мелкий'), icon: Icon(Icons.circle, size: 10)),
+                                  ButtonSegment<int>(value: 2, label: Text('Средний'), icon: Icon(Icons.store)),
+                                  ButtonSegment<int>(value: 1, label: Text('Крупный'), icon: Icon(Icons.star)),
+                                ],
+                                selected: {mapPriority},
+                                onSelectionChanged: (Set<int> newSelection) {
+                                  setState(() {
+                                    mapPriority = newSelection.first;
+                                  });
+                                },
+                              ),
                             ),
                           ],
                         ),
@@ -161,43 +167,9 @@ class _CompanyBranchesScreenState extends State<CompanyBranchesScreen> {
                                     markers: [
                                       Marker(
                                         point: tempLocation,
-                                        width: isVip ? 60 : 40,
-                                        height: isVip ? 60 : 40,
-                                        child:
-                                            isVip
-                                                ? Container(
-                                                  decoration: BoxDecoration(
-                                                    shape: BoxShape.circle,
-                                                    border: Border.all(
-                                                      color: const Color(
-                                                        0xFF00A2FF,
-                                                      ),
-                                                      width: 2,
-                                                    ),
-                                                    boxShadow: [
-                                                      BoxShadow(
-                                                        color: const Color(
-                                                          0xFF00A2FF,
-                                                        ).withOpacity(0.5),
-                                                        blurRadius: 8,
-                                                        spreadRadius: 2,
-                                                      ),
-                                                    ],
-                                                  ),
-                                                  child: const CircleAvatar(
-                                                    backgroundColor:
-                                                        Colors.black,
-                                                    child: Icon(
-                                                      Icons.star,
-                                                      color: Colors.white,
-                                                    ),
-                                                  ),
-                                                )
-                                                : const Icon(
-                                                  Icons.location_on,
-                                                  color: Colors.red,
-                                                  size: 40,
-                                                ),
+                                        width: mapPriority == 2 ? 60 : (mapPriority == 1 ? 50 : 30),
+                                        height: mapPriority == 2 ? 60 : (mapPriority == 1 ? 50 : 30),
+                                        child: _buildPreviewMarker(mapPriority),
                                       ),
                                     ],
                                   ),
@@ -244,7 +216,7 @@ class _CompanyBranchesScreenState extends State<CompanyBranchesScreen> {
                       backgroundColor: const Color(0xFF00A2FF),
                       foregroundColor: Colors.white,
                     ),
-                    onPressed: () => _addBranchWithVip(isVip),
+                    onPressed: () => _addBranchWithPriority(mapPriority),
                     child: const Text('Добавить'),
                   ),
                 ],
@@ -254,7 +226,47 @@ class _CompanyBranchesScreenState extends State<CompanyBranchesScreen> {
     );
   }
 
-  Future<void> _addBranchWithVip(bool isVip) async {
+  Widget _buildPreviewMarker(int priority) {
+    if (priority == 1) { // 1 = Large
+      return Container(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: const Color(0xFF00A2FF), width: 2),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF00A2FF).withOpacity(0.5),
+              blurRadius: 8,
+              spreadRadius: 2,
+            ),
+          ],
+        ),
+        child: const CircleAvatar(
+          backgroundColor: Colors.black,
+          child: Icon(Icons.star, color: Colors.white),
+        ),
+      );
+    } else if (priority == 2) { // 2 = Medium
+      return Container(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.orange,
+          border: Border.all(color: Colors.white, width: 2),
+        ),
+        child: const Icon(Icons.store, color: Colors.white, size: 30),
+      );
+    } else { // 3 (or others) = Small
+      return Container(
+         decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: Colors.black,
+          border: Border.all(color: Colors.white, width: 1),
+        ),
+        child: const Icon(Icons.circle, color: Colors.white, size: 10),
+      );
+    }
+  }
+
+  Future<void> _addBranchWithPriority(int priority) async {
     if (_addressCtrl.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Введите название/адрес филиала')),
@@ -268,11 +280,12 @@ class _CompanyBranchesScreenState extends State<CompanyBranchesScreen> {
         'name': _addressCtrl.text,
         'latitude': _selectedLocation.latitude,
         'longitude': _selectedLocation.longitude,
-        'is_vip': isVip,
+        'is_vip': priority == 1, // 1 is now VIP (Large)
+        'map_priority': priority, 
       });
       await AdminLogger.log(
         'add_branch',
-        'Добавлен филиал: ${_addressCtrl.text}',
+        'Добавлен филиал: ${_addressCtrl.text} (Priority: $priority)',
       );
       _addressCtrl.clear();
       loadBranches();
