@@ -137,150 +137,304 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('История действий'),
-        actions: [
-          IconButton(icon: const Icon(Icons.refresh), onPressed: _loadLogs),
-        ],
-      ),
-      body: Column(
-        children: [
-          // Filters Section
-          Container(
-            padding: const EdgeInsets.all(8.0),
-            color: Colors.grey[200],
-            child: Column(
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        icon: const Icon(Icons.date_range),
-                        label: Text(
-                          _startDate == null
-                              ? 'Выберите дату'
-                              : '${DateFormat('dd.MM').format(_startDate!)} - ${DateFormat('dd.MM').format(_endDate!)}',
+      body: CustomScrollView(
+        slivers: [
+          // App Bar
+          SliverAppBar(
+            expandedHeight: 100,
+            floating: true,
+            pinned: true,
+            elevation: 0,
+            backgroundColor: theme.scaffoldBackgroundColor,
+            flexibleSpace: FlexibleSpaceBar(
+              background: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'История действий',
+                            style: theme.textTheme.headlineMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.refresh),
+                            onPressed: _loadLogs,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          
+          // Filters
+          SliverToBoxAdapter(
+            child: Container(
+              margin: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: theme.cardColor,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: theme.dividerColor.withOpacity(0.1),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Фильтры',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.date_range, size: 18),
+                          label: Text(
+                            _startDate == null
+                                ? 'Дата'
+                                : '${DateFormat('dd.MM').format(_startDate!)} - ${DateFormat('dd.MM').format(_endDate!)}',
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                          ),
+                          onPressed: _pickDateRange,
                         ),
-                        onPressed: _pickDateRange,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: theme.colorScheme.outline.withOpacity(0.5),
+                            ),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              value: _selectedAction ?? 'Все',
+                              isExpanded: true,
+                              style: theme.textTheme.bodyMedium,
+                              items: _actionTypes
+                                  .map((e) => DropdownMenuItem(
+                                        value: e,
+                                        child: Text(
+                                          _getActionLabel(e),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ))
+                                  .toList(),
+                              onChanged: (val) {
+                                setState(() => _selectedAction = val);
+                                _loadLogs();
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_startDate != null ||
+                      (_selectedAction != null && _selectedAction != 'Все'))
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: TextButton.icon(
+                        onPressed: _clearFilters,
+                        icon: const Icon(Icons.clear, size: 16),
+                        label: const Text('Сбросить'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: Colors.red,
+                        ),
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        value: _selectedAction ?? 'Все',
-                        decoration: const InputDecoration(
-                          contentPadding: EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 0,
-                          ),
-                          border: OutlineInputBorder(),
-                        ),
-                        items:
-                            _actionTypes
-                                .map(
-                                  (e) => DropdownMenuItem(
-                                    value: e,
-                                    child: Text(e),
-                                  ),
-                                )
-                                .toList(),
-                        onChanged: (val) {
-                          setState(() => _selectedAction = val);
-                          _loadLogs();
-                        },
+                ],
+              ),
+            ),
+          ),
+          
+          // Content
+          if (_loading)
+            const SliverFillRemaining(
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_logs.isEmpty)
+            SliverFillRemaining(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.history_outlined,
+                      size: 64,
+                      color: Colors.grey[400],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'История пуста',
+                      style: TextStyle(
+                        fontSize: 18,
+                        color: Colors.grey[600],
                       ),
                     ),
                   ],
                 ),
-                if (_startDate != null ||
-                    _selectedAction != null && _selectedAction != 'Все')
-                  TextButton(
-                    onPressed: _clearFilters,
-                    child: const Text(
-                      'Сбросить фильтры',
-                      style: TextStyle(color: Colors.red),
-                    ),
-                  ),
-              ],
+              ),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    final log = _logs[index];
+                    return _buildLogCard(log, theme);
+                  },
+                  childCount: _logs.length,
+                ),
+              ),
+            ),
+          
+          const SliverPadding(padding: EdgeInsets.only(bottom: 20)),
+        ],
+      ),
+    );
+  }
+
+  String _getActionLabel(String action) {
+    switch (action) {
+      case 'create_company': return 'Создание';
+      case 'update_company': return 'Изменение';
+      case 'delete_company': return 'Удаление';
+      case 'add_branch': return 'Добавление филиала';
+      case 'delete_branch': return 'Удаление филиала';
+      default: return action;
+    }
+  }
+
+  Widget _buildLogCard(Map<String, dynamic> log, ThemeData theme) {
+    final date = DateTime.parse(log['created_at']).toLocal();
+    final action = log['action_type'] as String;
+    final details = log['details'] as String?;
+    final profile = log.containsKey('profiles') ? log['profiles'] : null;
+    final email = profile != null ? profile['email'] : 'Admin';
+
+    final actionInfo = _getActionInfo(action);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: theme.dividerColor.withOpacity(0.1),
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: actionInfo.color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              actionInfo.icon,
+              color: actionInfo.color,
+              size: 20,
             ),
           ),
-
-          // List Section
+          const SizedBox(width: 12),
           Expanded(
-            child:
-                _loading
-                    ? const Center(child: CircularProgressIndicator())
-                    : _logs.isEmpty
-                    ? const Center(child: Text('История пуста'))
-                    : ListView.builder(
-                      itemCount: _logs.length,
-                      itemBuilder: (context, index) {
-                        final log = _logs[index];
-                        final date =
-                            DateTime.parse(log['created_at']).toLocal();
-                        final action = log['action_type'];
-                        final details = log['details'];
-                        final profile =
-                            log.containsKey('profiles')
-                                ? log['profiles']
-                                : null;
-                        final email =
-                            profile != null ? profile['email'] : 'Admin';
-
-                        return Card(
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 5,
-                          ),
-                          child: ListTile(
-                            leading: _getIconForAction(action),
-                            title: Text(details ?? action),
-                            subtitle: Text(
-                              '$email • ${DateFormat('dd.MM.yyyy HH:mm').format(date)}',
-                            ),
-                          ),
-                        );
-                      },
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  details ?? actionInfo.label,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Icon(
+                      Icons.person_outline,
+                      size: 14,
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        email,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(
+                      Icons.access_time,
+                      size: 14,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      DateFormat('dd.MM.yy HH:mm').format(date),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _getIconForAction(String action) {
+  ({IconData icon, Color color, String label}) _getActionInfo(String action) {
     switch (action) {
       case 'create_company':
-        return const CircleAvatar(
-          backgroundColor: Colors.green,
-          child: Icon(Icons.add, color: Colors.white),
-        );
+        return (icon: Icons.add_business, color: Colors.green, label: 'Компания создана');
       case 'delete_company':
-        return const CircleAvatar(
-          backgroundColor: Colors.red,
-          child: Icon(Icons.delete, color: Colors.white),
-        );
+        return (icon: Icons.delete_outline, color: Colors.red, label: 'Компания удалена');
       case 'update_company':
-        return const CircleAvatar(
-          backgroundColor: Colors.blue,
-          child: Icon(Icons.edit, color: Colors.white),
-        );
+        return (icon: Icons.edit_outlined, color: Colors.blue, label: 'Компания изменена');
       case 'add_branch':
-        return const CircleAvatar(
-          backgroundColor: Colors.orange,
-          child: Icon(Icons.store, color: Colors.white),
-        );
+        return (icon: Icons.add_location, color: Colors.orange, label: 'Филиал добавлен');
       case 'delete_branch':
-        return const CircleAvatar(
-          backgroundColor: Colors.deepOrange,
-          child: Icon(Icons.remove_circle, color: Colors.white),
-        );
+        return (icon: Icons.location_off, color: Colors.deepOrange, label: 'Филиал удален');
+      case 'assign_manager':
+        return (icon: Icons.person_add, color: Colors.purple, label: 'Менеджер назначен');
       default:
-        return const CircleAvatar(
-          backgroundColor: Colors.grey,
-          child: Icon(Icons.history, color: Colors.white),
-        );
+        return (icon: Icons.history, color: Colors.grey, label: action);
     }
   }
 }

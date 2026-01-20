@@ -289,45 +289,97 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
     return Scaffold(
-      appBar: AppBar(
-        title: TextField(
-          controller: _searchController,
-          focusNode: _searchFocusNode,
-          decoration: InputDecoration(
-            hintText: 'Поиск магазина...',
-            border: InputBorder.none,
-            suffixIcon:
-                _searchController.text.isNotEmpty
-                    ? IconButton(
-                      icon: const Icon(Icons.clear),
-                      onPressed: () {
-                        _searchController.clear();
-                        FocusScope.of(context).unfocus();
-                      },
-                    )
-                    : const Icon(Icons.search),
-          ),
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          if (_currentPosition != null) {
-            if (_isMapReady) {
-              _mapController.move(_currentPosition!, 15);
-            }
-          } else {
-            _determinePosition();
-          }
-        },
-        child: const Icon(Icons.my_location),
-      ),
-      body:
+      body: Stack(
+        children: [
+          // Map
           _loading
               ? const Center(child: CircularProgressIndicator())
-              : Stack(
-                children: [
-                  FlutterMap(
+              : _buildMap(theme),
+          
+          // Search bar overlay
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 16,
+            left: 16,
+            right: 16,
+            child: Container(
+              decoration: BoxDecoration(
+                color: theme.cardColor,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: TextField(
+                controller: _searchController,
+                focusNode: _searchFocusNode,
+                decoration: InputDecoration(
+                  hintText: 'Поиск магазинов и скидок...',
+                  hintStyle: TextStyle(color: Colors.grey[400]),
+                  prefixIcon: Icon(Icons.search, color: theme.colorScheme.primary),
+                  suffixIcon: _searchController.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () {
+                            _searchController.clear();
+                            FocusScope.of(context).unfocus();
+                          },
+                        )
+                      : null,
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                ),
+              ),
+            ),
+          ),
+          
+          // My location button
+          Positioned(
+            bottom: 100,
+            right: 16,
+            child: Column(
+              children: [
+                Container(
+                  decoration: BoxDecoration(
+                    color: theme.cardColor,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: IconButton(
+                    icon: Icon(Icons.my_location, color: theme.colorScheme.primary),
+                    onPressed: () {
+                      if (_currentPosition != null) {
+                        if (_isMapReady) {
+                          _mapController.move(_currentPosition!, 15);
+                        }
+                      } else {
+                        _determinePosition();
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMap(ThemeData theme) {
+    return FlutterMap(
                     mapController: _mapController,
                     options: MapOptions(
                       onMapReady: () {
@@ -420,87 +472,107 @@ class _MapScreenState extends State<MapScreen> {
                         ],
                       ),
                     ],
-                  ),
-                  // Компас (появляется при вращении)
-                  Positioned(
-                    top: 100,
-                    right: 16,
-                    child: StreamBuilder<MapEvent>(
-                      stream: _mapController.mapEventStream,
-                      builder: (context, snapshot) {
-                        final rotation = _mapController.camera.rotation;
-                        // Показываем компас только если карта повернута
-                        if (rotation == 0) return const SizedBox.shrink();
+                  );
+  }
 
-                        return FloatingActionButton.small(
-                          heroTag: 'compass',
-                          backgroundColor: Theme.of(context).cardColor,
-                          onPressed: () {
-                            _mapController.rotate(0); // Сброс на Север
-                          },
-                          child: Transform.rotate(
-                            angle: rotation * (3.14159 / 180),
-                            child: const Icon(
-                              Icons.navigation,
-                              color: Colors.redAccent,
+  void _showBranchDetails(Map<String, dynamic> branch) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return BranchDetailsSheet(
+          branch: branch,
+          onBuildRoute: () {
+            final lat = branch['latitude'] as double?;
+            final lng = branch['longitude'] as double?;
+            if (lat != null && lng != null) {
+              Navigator.pop(ctx);
+              _openExternalMap(LatLng(lat, lng));
+            }
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildSearchResultsList(ThemeData theme) {
+    if (!_searchFocusNode.hasFocus || _searchController.text.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    
+    return Positioned(
+      top: MediaQuery.of(context).padding.top + 80,
+      left: 16,
+      right: 16,
+      bottom: 100,
+      child: Container(
+        decoration: BoxDecoration(
+          color: theme.cardColor,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 10,
+            ),
+          ],
+        ),
+        child: _filteredBranches.isEmpty
+            ? const Center(child: Text('Ничего не найдено'))
+            : ListView.builder(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                itemCount: _filteredBranches.length,
+                itemBuilder: (context, index) {
+                  final branch = _filteredBranches[index];
+                  final company = branch['companies'] as Map<String, dynamic>?;
+                  final companyName = company?['name'] as String? ?? 'Компания';
+                  final branchName = branch['name'] as String? ?? 'Филиал';
+                  final logoUrl = company?['logo_url'] as String?;
+                  final lat = branch['latitude'] as double?;
+                  final lng = branch['longitude'] as double?;
+                  final discount = company?['discount_percentage'] as int?;
+
+                  return ListTile(
+                    leading: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: theme.colorScheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: logoUrl != null
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(10),
+                              child: Image.network(logoUrl, fit: BoxFit.cover),
+                            )
+                          : Icon(Icons.store, color: theme.colorScheme.primary),
+                    ),
+                    title: Text(companyName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: Text(branchName),
+                    trailing: discount != null
+                        ? Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(8),
                             ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                  if (_searchController.text.isNotEmpty &&
-                      _searchFocusNode.hasFocus)
-                    Container(
-                      color: Theme.of(context).scaffoldBackgroundColor,
-                      child:
-                          _filteredBranches.isEmpty
-                              ? const Center(child: Text('Ничего не найдено'))
-                              : ListView.builder(
-                                itemCount: _filteredBranches.length,
-                                itemBuilder: (context, index) {
-                                  final branch = _filteredBranches[index];
-                                  final company =
-                                      branch['companies']
-                                          as Map<String, dynamic>?;
-                                  final companyName =
-                                      company?['name'] as String? ?? 'Компания';
-                                  final branchName =
-                                      branch['name'] as String? ?? 'Филиал';
-                                  final logoUrl =
-                                      company?['logo_url'] as String?;
-                                  final lat = branch['latitude'] as double?;
-                                  final lng = branch['longitude'] as double?;
-
-                                  return ListTile(
-                                    leading: CircleAvatar(
-                                      backgroundImage:
-                                          logoUrl != null
-                                              ? NetworkImage(logoUrl)
-                                              : null,
-                                      child:
-                                          logoUrl == null
-                                              ? const Icon(Icons.store)
-                                              : null,
-                                    ),
-                                    title: Text(companyName),
-                                    subtitle: Text(branchName),
-                                    onTap: () {
-                                      if (lat != null && lng != null) {
-                                        _mapController.move(
-                                          LatLng(lat, lng),
-                                          15,
-                                        );
-                                        _searchFocusNode.unfocus();
-                                        _showBranchDetails(branch);
-                                      }
-                                    },
-                                  );
-                                },
-                              ),
-                    ),
-                ],
+                            child: Text(
+                              '-$discount%',
+                              style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12),
+                            ),
+                          )
+                        : null,
+                    onTap: () {
+                      if (lat != null && lng != null) {
+                        _mapController.move(LatLng(lat, lng), 15);
+                        _searchFocusNode.unfocus();
+                        _showBranchDetails(branch);
+                      }
+                    },
+                  );
+                },
               ),
+      ),
     );
   }
 
@@ -605,28 +677,6 @@ class _MapScreenState extends State<MapScreen> {
         ).showSnackBar(SnackBar(content: Text('Не удалось открыть карту: $e')));
       }
     }
-  }
-
-  void _showBranchDetails(Map<String, dynamic> branch) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder:
-          (ctx) => BranchDetailsSheet(
-            branch: branch,
-            onBuildRoute: () {
-              final lat = branch['latitude'] as double?;
-              final lng = branch['longitude'] as double?;
-              if (lat != null && lng != null) {
-                Navigator.pop(ctx);
-                _openExternalMap(LatLng(lat, lng));
-              }
-            },
-          ),
-    );
   }
 }
 
