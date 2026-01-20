@@ -16,11 +16,11 @@ class CompaniesScreen extends StatefulWidget {
 class _CompaniesScreenState extends State<CompaniesScreen> {
   List<Map<String, dynamic>> companies = [];
   bool loading = true;
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
-
     loadCompanies();
   }
 
@@ -29,7 +29,7 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
     try {
       final data = await Supabase.instance.client
           .from('companies')
-          .select('id, name, description, discount_percentage, logo_url');
+          .select('id, name, description, discount_percentage, logo_url, category');
 
       setState(() {
         companies = List<Map<String, dynamic>>.from(data);
@@ -45,52 +45,283 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
     }
   }
 
+  List<Map<String, dynamic>> get _filteredCompanies {
+    if (_searchQuery.isEmpty) return companies;
+    return companies.where((c) {
+      final name = (c['name'] as String? ?? '').toLowerCase();
+      final desc = (c['description'] as String? ?? '').toLowerCase();
+      return name.contains(_searchQuery.toLowerCase()) ||
+             desc.contains(_searchQuery.toLowerCase());
+    }).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final filtered = _filteredCompanies;
+    
     return Scaffold(
-      appBar: AppBar(title: const Text('Компании')),
-      floatingActionButton: FloatingActionButton(
-        child: const Icon(Icons.add),
+      body: CustomScrollView(
+        slivers: [
+          // Custom App Bar
+          SliverAppBar(
+            expandedHeight: 120,
+            floating: true,
+            pinned: true,
+            elevation: 0,
+            backgroundColor: theme.scaffoldBackgroundColor,
+            flexibleSpace: FlexibleSpaceBar(
+              background: SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            'Компании',
+                            style: theme.textTheme.headlineMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primaryContainer,
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              '${companies.length}',
+                              style: TextStyle(
+                                color: theme.colorScheme.primary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            bottom: PreferredSize(
+              preferredSize: const Size.fromHeight(60),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                child: TextField(
+                  onChanged: (v) => setState(() => _searchQuery = v),
+                  decoration: InputDecoration(
+                    hintText: 'Поиск компаний...',
+                    prefixIcon: const Icon(Icons.search),
+                    filled: true,
+                    fillColor: theme.colorScheme.surfaceContainerHighest,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          
+          // Content
+          if (loading)
+            const SliverFillRemaining(
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (filtered.isEmpty)
+            SliverFillRemaining(
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.store_outlined,
+                      size: 64,
+                      color: Colors.grey[400],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      _searchQuery.isEmpty ? 'Нет компаний' : 'Ничего не найдено',
+                      style: TextStyle(
+                        fontSize: 18,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.all(16),
+              sliver: SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, i) {
+                    final c = filtered[i];
+                    return _buildCompanyCard(c, theme);
+                  },
+                  childCount: filtered.length,
+                ),
+              ),
+            ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
           Navigator.push(
             context,
             MaterialPageRoute(builder: (_) => const CompanyFormScreen()),
           ).then((_) => loadCompanies());
         },
+        icon: const Icon(Icons.add),
+        label: const Text('Добавить'),
       ),
-      body:
-          loading
-              ? const Center(child: CircularProgressIndicator())
-              : companies.isEmpty
-              ? const Center(child: Text('Нет компаний'))
-              : ListView.builder(
-                itemCount: companies.length,
-                itemBuilder: (context, i) {
-                  final c = companies[i];
-                  final discount = c['discount_percentage'] ?? 0;
-
-                  return ListTile(
-                    leading:
-                        c['logo_url'] != null
-                            ? CircleAvatar(
-                              backgroundImage: NetworkImage(c['logo_url']),
-                            )
-                            : const CircleAvatar(child: Icon(Icons.store)),
-                    title: Text(c['name'] ?? 'Без названия'),
-                    subtitle: Text('Скидка: $discount%'),
-                    trailing: const Icon(Icons.arrow_forward_ios),
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => CompanyFormScreen(company: c),
-                        ),
-                      ).then((_) => loadCompanies());
-                    },
-                  );
-                },
-              ),
     );
+  }
+
+  Widget _buildCompanyCard(Map<String, dynamic> c, ThemeData theme) {
+    final discount = c['discount_percentage'] ?? 0;
+    final category = c['category'] as String? ?? 'Другое';
+    
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: theme.dividerColor.withOpacity(0.2),
+        ),
+      ),
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => CompanyFormScreen(company: c),
+            ),
+          ).then((_) => loadCompanies());
+        },
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              // Logo
+              Container(
+                width: 60,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: c['logo_url'] != null
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.network(
+                          c['logo_url'],
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Icon(
+                            Icons.store,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                      )
+                    : Icon(
+                        Icons.store,
+                        color: theme.colorScheme.primary,
+                        size: 28,
+                      ),
+              ),
+              const SizedBox(width: 16),
+              // Info
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      c['name'] ?? 'Без названия',
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _getCategoryColor(category).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            category,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: _getCategoryColor(category),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            '-$discount%',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Colors.green,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              // Arrow
+              Icon(
+                Icons.chevron_right,
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Color _getCategoryColor(String category) {
+    switch (category) {
+      case 'Еда': return Colors.orange;
+      case 'Одежда': return Colors.pink;
+      case 'Электроника': return Colors.blue;
+      case 'Услуги': return Colors.purple;
+      case 'Развлечения': return Colors.red;
+      default: return Colors.grey;
+    }
   }
 }
 

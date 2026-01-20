@@ -38,17 +38,9 @@ class _RoleCheckScreenState extends State<RoleCheckScreen> {
       final role = data?['role'] as String? ?? 'user';
 
       if (role == 'admin') {
-        // Админку пока не переводили на go_router полностью, 
-        // но можно сделать простой переход
-        // context.go('/admin'); 
-        // Пока оставим как есть, но GoRouter требует путей.
-        // В router.dart я не добавил /admin как ShellRoute, а как простой Route.
-        // Поэтому просто переходим на /admin
-        // Но у нас AdminDashboard не адаптирован. 
-        // Для теста клиента (User) это не критично.
-        // Давайте пока просто перенаправим на /home если роль user
-        // А если админ - покажем заглушку или попробуем /admin
-         context.go('/admin/home');
+        context.go('/admin/home');
+      } else if (role == 'manager') {
+        context.go('/manager/home');
       } else {
         context.go('/home');
       }
