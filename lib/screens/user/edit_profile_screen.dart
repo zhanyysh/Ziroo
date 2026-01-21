@@ -17,7 +17,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final _phoneController = TextEditingController();
   bool _loading = false;
   bool _isGoogleUser = false;
-  
+
   File? _avatarFile;
   String? _currentAvatarUrl;
 
@@ -39,17 +39,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final user = Supabase.instance.client.auth.currentUser;
     if (user != null) {
       String name = user.userMetadata?['name'] ?? '';
-      
+
       try {
-        final data = await Supabase.instance.client
-            .from('profiles')
-            .select('full_name, avatar_url')
-            .eq('id', user.id)
-            .maybeSingle();
-        
+        final data =
+            await Supabase.instance.client
+                .from('profiles')
+                .select('full_name, avatar_url')
+                .eq('id', user.id)
+                .maybeSingle();
+
         if (data != null) {
           if (data['full_name'] != null) name = data['full_name'];
-          if (data['avatar_url'] != null) _currentAvatarUrl = data['avatar_url'];
+          if (data['avatar_url'] != null)
+            _currentAvatarUrl = data['avatar_url'];
         }
       } catch (e) {
         // Ignore error, use metadata name
@@ -69,7 +71,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Future<void> _pickAvatar() async {
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-    
+
     if (pickedFile != null) {
       final croppedFile = await ImageCropper().cropImage(
         sourcePath: pickedFile.path,
@@ -103,11 +105,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (_avatarFile == null) return null;
     try {
       final fileExt = _avatarFile!.path.split('.').last;
-      final fileName = '$userId/avatar_${DateTime.now().millisecondsSinceEpoch}.$fileExt';
-      
+      final fileName =
+          '$userId/avatar_${DateTime.now().millisecondsSinceEpoch}.$fileExt';
+
       await Supabase.instance.client.storage
           .from('avatars')
-          .upload(fileName, _avatarFile!, fileOptions: const FileOptions(upsert: true));
+          .upload(
+            fileName,
+            _avatarFile!,
+            fileOptions: const FileOptions(upsert: true),
+          );
 
       final imageUrl = Supabase.instance.client.storage
           .from('avatars')
@@ -152,7 +159,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         'full_name': newName,
         'phone': newPhone,
       };
-      
+
       if (newEmail != user.email && !_isGoogleUser) {
         profileUpdates['email'] = newEmail;
       }
@@ -169,9 +176,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text((newEmail != user.email && !_isGoogleUser) || (newPhone != user.phone) 
-              ? 'Данные обновлены. Может потребоваться подтверждение.' 
-              : 'Профиль успешно обновлен'),
+            content: Text(
+              (newEmail != user.email && !_isGoogleUser) ||
+                      (newPhone != user.phone)
+                  ? 'Данные обновлены. Может потребоваться подтверждение.'
+                  : 'Профиль успешно обновлен',
+            ),
             backgroundColor: Colors.green,
           ),
         );
@@ -180,10 +190,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     } on AuthException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.message),
-            backgroundColor: Colors.red,
-          ),
+          SnackBar(content: Text(e.message), backgroundColor: Colors.red),
         );
       }
     } catch (e) {
@@ -237,7 +244,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             ),
             const SizedBox(height: 32),
 
-             // Avatar Picker
+            // Avatar Picker
             Center(
               child: GestureDetector(
                 onTap: _pickAvatar,
@@ -245,13 +252,23 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   children: [
                     CircleAvatar(
                       radius: 50,
-                      backgroundColor: theme.colorScheme.surfaceContainerHighest,
-                      backgroundImage: _avatarFile != null 
-                        ? FileImage(_avatarFile!) 
-                        : (_currentAvatarUrl != null ? NetworkImage(_currentAvatarUrl!) as ImageProvider : null), // Cast explicitly if needed
-                      child: (_avatarFile == null && _currentAvatarUrl == null)
-                          ? Icon(Icons.person, size: 50, color: theme.colorScheme.onSurfaceVariant)
-                          : null,
+                      backgroundColor:
+                          theme.colorScheme.surfaceContainerHighest,
+                      backgroundImage:
+                          _avatarFile != null
+                              ? FileImage(_avatarFile!)
+                              : (_currentAvatarUrl != null
+                                  ? NetworkImage(_currentAvatarUrl!)
+                                      as ImageProvider
+                                  : null), // Cast explicitly if needed
+                      child:
+                          (_avatarFile == null && _currentAvatarUrl == null)
+                              ? Icon(
+                                Icons.person,
+                                size: 50,
+                                color: theme.colorScheme.onSurfaceVariant,
+                              )
+                              : null,
                     ),
                     Positioned(
                       bottom: 0,
@@ -261,9 +278,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         decoration: BoxDecoration(
                           color: theme.colorScheme.primary,
                           shape: BoxShape.circle,
-                          border: Border.all(color: theme.colorScheme.surface, width: 2),
+                          border: Border.all(
+                            color: theme.colorScheme.surface,
+                            width: 2,
+                          ),
                         ),
-                        child: Icon(Icons.edit, size: 16, color: theme.colorScheme.onPrimary),
+                        child: Icon(
+                          Icons.edit,
+                          size: 16,
+                          color: theme.colorScheme.onPrimary,
+                        ),
                       ),
                     ),
                   ],
@@ -282,9 +306,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   borderRadius: BorderRadius.circular(16),
                 ),
                 filled: true,
-                fillColor: isDark
-                    ? theme.colorScheme.surfaceContainerHighest
-                    : Colors.grey.shade50,
+                fillColor:
+                    isDark
+                        ? theme.colorScheme.surfaceContainerHighest
+                        : Colors.grey.shade50,
               ),
             ),
             const SizedBox(height: 24),
@@ -297,16 +322,18 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               decoration: InputDecoration(
                 labelText: 'Email',
                 prefixIcon: const Icon(Icons.email_outlined),
-                helperText: _isGoogleUser
-                    ? 'Email управляется через Google аккаунт'
-                    : 'При изменении email потребуется подтверждение',
+                helperText:
+                    _isGoogleUser
+                        ? 'Email управляется через Google аккаунт'
+                        : 'При изменении email потребуется подтверждение',
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
                 filled: true,
-                fillColor: isDark
-                    ? theme.colorScheme.surfaceContainerHighest
-                    : Colors.grey.shade50,
+                fillColor:
+                    isDark
+                        ? theme.colorScheme.surfaceContainerHighest
+                        : Colors.grey.shade50,
               ),
             ),
             const SizedBox(height: 24),
@@ -323,9 +350,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   borderRadius: BorderRadius.circular(16),
                 ),
                 filled: true,
-                fillColor: isDark
-                    ? theme.colorScheme.surfaceContainerHighest
-                    : Colors.grey.shade50,
+                fillColor:
+                    isDark
+                        ? theme.colorScheme.surfaceContainerHighest
+                        : Colors.grey.shade50,
               ),
             ),
             const SizedBox(height: 40),
@@ -342,22 +370,23 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 foregroundColor: theme.colorScheme.onPrimary,
                 elevation: 2,
               ),
-              child: _loading
-                  ? SizedBox(
-                      height: 24,
-                      width: 24,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        color: theme.colorScheme.onPrimary,
+              child:
+                  _loading
+                      ? SizedBox(
+                        height: 24,
+                        width: 24,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: theme.colorScheme.onPrimary,
+                        ),
+                      )
+                      : const Text(
+                        'Сохранить изменения',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
-                    )
-                  : const Text(
-                      'Сохранить изменения',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
             ),
           ],
         ),
