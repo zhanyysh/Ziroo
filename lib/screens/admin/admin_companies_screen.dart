@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'company_branches_screen.dart';
 import 'company_events_screen.dart';
 import '../../services/admin_logger.dart';
@@ -369,9 +370,36 @@ class _CompanyFormScreenState extends State<CompanyFormScreen> {
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
     if (pickedFile != null) {
-      setState(() {
-        _logoFile = File(pickedFile.path);
-      });
+      final croppedFile = await ImageCropper().cropImage(
+        sourcePath: pickedFile.path,
+        // cropStyle removed from here
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'Логотип',
+            toolbarColor: Colors.deepPurple,
+            toolbarWidgetColor: Colors.white,
+            initAspectRatio: CropAspectRatioPreset.square,
+            lockAspectRatio: false,
+            cropStyle: CropStyle.circle, // <-- Moved here
+            aspectRatioPresets: [
+              CropAspectRatioPreset.square,
+              CropAspectRatioPreset.original,
+            ],
+          ),
+          IOSUiSettings(
+            title: 'Логотип',
+            cropStyle: CropStyle.circle, // <-- Moved here
+            aspectRatioLockEnabled: true,
+            resetAspectRatioEnabled: false,
+          ),
+        ],
+      );
+
+      if (croppedFile != null) {
+        setState(() {
+          _logoFile = File(croppedFile.path);
+        });
+      }
     }
   }
 

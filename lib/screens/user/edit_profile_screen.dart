@@ -1,5 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -14,6 +17,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final _phoneController = TextEditingController();
   bool _loading = false;
   bool _isGoogleUser = false;
+  
+  File? _avatarFile;
+  String? _currentAvatarUrl;
 
   @override
   void initState() {
@@ -37,12 +43,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       try {
         final data = await Supabase.instance.client
             .from('profiles')
-            .select('full_name')
+            .select('full_name, avatar_url')
             .eq('id', user.id)
             .maybeSingle();
         
-        if (data != null && data['full_name'] != null) {
-          name = data['full_name'];
+        if (data != null) {
+          if (data['full_name'] != null) name = data['full_name'];
+          if (data['avatar_url'] != null) _currentAvatarUrl = data['avatar_url'];
         }
       } catch (e) {
         // Ignore error, use metadata name
@@ -59,6 +66,59 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
+  Future<void> _pickAvatar() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+    
+    if (pickedFile != null) {
+      final croppedFile = await ImageCropper().cropImage(
+        sourcePath: pickedFile.path,
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'Фото профиля',
+            toolbarColor: Colors.deepPurple,
+            toolbarWidgetColor: Colors.white,
+            initAspectRatio: CropAspectRatioPreset.square,
+            lockAspectRatio: true,
+            cropStyle: CropStyle.circle, // Added here
+          ),
+          IOSUiSettings(
+            title: 'Фото профиля',
+            cropStyle: CropStyle.circle, // Added here
+            aspectRatioLockEnabled: true,
+            resetAspectRatioEnabled: false,
+          ),
+        ],
+      );
+
+      if (croppedFile != null) {
+        setState(() {
+          _avatarFile = File(croppedFile.path);
+        });
+      }
+    }
+  }
+
+  Future<String?> _uploadAvatar(String userId) async {
+    if (_avatarFile == null) return null;
+    try {
+      final fileExt = _avatarFile!.path.split('.').last;
+      final fileName = '$userId/avatar_${DateTime.now().millisecondsSinceEpoch}.$fileExt';
+      
+      await Supabase.instance.client.storage
+          .from('avatars')
+          .upload(fileName, _avatarFile!, fileOptions: const FileOptions(upsert: true));
+
+      final imageUrl = Supabase.instance.client.storage
+          .from('avatars')
+          .getPublicUrl(fileName);
+      return imageUrl;
+    } catch (e) {
+      debugPrint('Avatar upload error: $e');
+      return null;
+    }
+  }
+
   Future<void> _updateProfile() async {
     setState(() => _loading = true);
     try {
@@ -69,11 +129,20 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       final newEmail = _emailController.text.trim();
       final newPhone = _phoneController.text.trim();
 
+      // Upload Avatar if changed
+      String? newAvatarUrl;
+      if (_avatarFile != null) {
+        newAvatarUrl = await _uploadAvatar(user.id);
+      }
+
       // 1. Обновляем Auth User (metadata, email и phone)
       final updates = UserAttributes(
         email: (newEmail != user.email && !_isGoogleUser) ? newEmail : null,
         phone: (newPhone != user.phone) ? newPhone : null,
-        data: {'name': newName},
+        data: {
+          'name': newName,
+          if (newAvatarUrl != null) 'avatar_url': newAvatarUrl,
+        },
       );
 
       await Supabase.instance.client.auth.updateUser(updates);
@@ -87,6 +156,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (newEmail != user.email && !_isGoogleUser) {
         profileUpdates['email'] = newEmail;
       }
+      if (newAvatarUrl != null) {
+        profileUpdates['avatar_url'] = newAvatarUrl;
+      }
 
       await Supabase.instance.client
           .from('profiles')
@@ -94,28 +166,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           .eq('id', user.id);
 
       // 3. Показываем результат
-      if ((newEmail != user.email && !_isGoogleUser) || (newPhone != user.phone)) {
-        if (mounted) {
-           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Данные обновлены. Может потребоваться подтверждение.'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
-      } else {
-         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Профиль успешно обновлен'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      }
-
       if (mounted) {
-        Navigator.pop(context, true); // Возвращаем true, чтобы обновить родительский экран
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text((newEmail != user.email && !_isGoogleUser) || (newPhone != user.phone) 
+              ? 'Данные обновлены. Может потребоваться подтверждение.' 
+              : 'Профиль успешно обновлен'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        Navigator.pop(context, true);
       }
     } on AuthException catch (e) {
       if (mounted) {
@@ -176,6 +236,41 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               ),
             ),
             const SizedBox(height: 32),
+
+             // Avatar Picker
+            Center(
+              child: GestureDetector(
+                onTap: _pickAvatar,
+                child: Stack(
+                  children: [
+                    CircleAvatar(
+                      radius: 50,
+                      backgroundColor: theme.colorScheme.surfaceContainerHighest,
+                      backgroundImage: _avatarFile != null 
+                        ? FileImage(_avatarFile!) 
+                        : (_currentAvatarUrl != null ? NetworkImage(_currentAvatarUrl!) as ImageProvider : null), // Cast explicitly if needed
+                      child: (_avatarFile == null && _currentAvatarUrl == null)
+                          ? Icon(Icons.person, size: 50, color: theme.colorScheme.onSurfaceVariant)
+                          : null,
+                    ),
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primary,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: theme.colorScheme.surface, width: 2),
+                        ),
+                        child: Icon(Icons.edit, size: 16, color: theme.colorScheme.onPrimary),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
 
             // Name Field
             TextField(

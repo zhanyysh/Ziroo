@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_map_marker_cluster/flutter_map_marker_cluster.dart'; // Added for Clustering
-import 'package:latlong2/latlong.dart';
+import 'package:latlong2/latlong.dart' hide Path;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -487,7 +487,7 @@ class _MapScreenState extends State<MapScreen> {
               MarkerClusterLayerWidget(
                 options: MarkerClusterLayerOptions(
                   maxClusterRadius: 80,
-                  size: const Size(40, 40),
+                  size: const Size(45, 45), // Чуть больше для красоты
                   alignment: Alignment.center,
                   padding: const EdgeInsets.all(50),
                   maxZoom: 18,
@@ -497,36 +497,51 @@ class _MapScreenState extends State<MapScreen> {
                     final company = branch['companies'] as Map<String, dynamic>?;
                     final logoUrl = company?['logo_url'] as String?;
                     final name = company?['name'] as String? ?? '';
-                    final isVip = branch['is_vip'] == true;
+                    final priority = branch['map_priority'] as int? ?? 3; 
 
                     if (lat == null || lng == null) return null;
 
-                    final isBigShop = isVip || (logoUrl != null && logoUrl.isNotEmpty);
+                    // ДИНАМИЧЕСКИЙ РАЗМЕР МАРКЕРА
+                    double width = 40; 
+                    double height = 40;
+                    
+                    if (priority == 1) {
+                      width = 160; // Широкий для "Чипса" с текстом
+                      height = 60;
+                    } else if (priority == 2) {
+                      width = 50;
+                      height = 50;
+                    }
 
                     return Marker(
                       point: LatLng(lat, lng),
-                      width: isBigShop ? 120 : 40,
-                      height: isBigShop ? 80 : 40,
+                      width: width,
+                      height: height,
                       child: GestureDetector(
                         onTap: () => _showBranchDetails(branch),
-                        child: _buildMarkerIcon(logoUrl, name, isBigShop),
+                        child: _buildMarkerIcon(logoUrl, name, priority),
                       ),
                     );
                   }).whereType<Marker>().toList(),
                   builder: (context, markers) {
+                    // КРАСИВЫЙ КЛАСТЕР (Группировка)
                     return Container(
                       decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(20),
-                        color: Colors.green,
+                        shape: BoxShape.circle,
+                        color: const Color(0xFF2B2E4A), // Темно-синий профессиональный цвет
                         border: Border.all(color: Colors.white, width: 2),
-                         boxShadow: [
-                           BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 4, offset: const Offset(2, 2))
+                        boxShadow: [
+                           BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4))
                         ],
                       ),
                       child: Center(
                         child: Text(
                           markers.length.toString(),
-                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            color: Colors.white, 
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16
+                          ),
                         ),
                       ),
                     );
@@ -668,55 +683,136 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  Widget _buildMarkerIcon(String? logoUrl, String name, bool isBigShop) {
-    if (isBigShop) {
-      return Column(
-        mainAxisSize: MainAxisSize.min,
+  Widget _buildMarkerIcon(String? logoUrl, String name, int priority) {
+    // -------------------------------------------------------------------------
+    // СТИЛЬ 1: "SMART CHIP" (Для VIP/Крупных) 
+    // Выглядит как пилюля с логотипом и названием.
+    // -------------------------------------------------------------------------
+    if (priority == 1) {
+      return Stack(
+        alignment: Alignment.center,
         children: [
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: const Color(0xFF00A2FF), width: 2),
-                boxShadow: [
-                  BoxShadow(
-                    color: const Color(0xFF00A2FF).withOpacity(0.5),
-                    blurRadius: 8,
-                    spreadRadius: 2,
-                  ),
-                ],
-              ),
-              child: CircleAvatar(
-                backgroundImage: logoUrl != null ? NetworkImage(logoUrl) : null,
-                backgroundColor: Colors.black,
-                child: logoUrl == null ? const Icon(Icons.star, color: Colors.white) : null,
-              ),
-            ),
-          ),
-          const SizedBox(height: 4),
+          // Основное тело "Чипса"
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            height: 40,
+            padding: const EdgeInsets.only(right: 12),
             decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.7),
-              borderRadius: BorderRadius.circular(4),
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: Colors.grey.withOpacity(0.2), width: 1),
+              boxShadow: [
+                 BoxShadow(
+                   color: Colors.black.withOpacity(0.3),
+                   blurRadius: 8,
+                   offset: const Offset(0, 4),
+                 ),
+              ],
             ),
-            child: Text(
-              name,
-              style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-              overflow: TextOverflow.ellipsis,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                 // Логотип слева
+                 Container(
+                   width: 40,
+                   height: 40,
+                   decoration: BoxDecoration(
+                     color: Colors.grey[100],
+                     shape: BoxShape.circle, 
+                     border: Border.all(color: Colors.white, width: 2),
+                     // Убрали DecorationImage, используем child
+                   ),
+                   clipBehavior: Clip.hardEdge, // Обрезаем контент по кругу
+                   child: logoUrl != null 
+                     ? Image.network(logoUrl, fit: BoxFit.cover)
+                     : const Icon(Icons.star, color: Colors.orange, size: 20),
+                 ),
+                 const SizedBox(width: 8),
+                 // Название
+                 Flexible(
+                   child: Text(
+                     name,
+                     style: const TextStyle(
+                       color: Colors.black87,
+                       fontWeight: FontWeight.w600,
+                       fontSize: 12,
+                     ),
+                     maxLines: 1,
+                     overflow: TextOverflow.ellipsis,
+                   ),
+                 ),
+              ],
             ),
           ),
         ],
       );
+    } 
+    
+    // -------------------------------------------------------------------------
+    // СТИЛЬ 2: "FLOATING PIN" (Для средних магазинов)
+    // Аккуратный белый кружок с иконкой.
+    // -------------------------------------------------------------------------
+    if (priority == 2) {
+       return Column(
+         mainAxisSize: MainAxisSize.min,
+         children: [
+           Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white,
+              border: Border.all(color: Colors.grey.withOpacity(0.2), width: 1),
+               boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 6,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: logoUrl != null 
+                ? Container(
+                    width: 28, 
+                    height: 28,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white,
+                    ),
+                    clipBehavior: Clip.hardEdge,
+                    child: Image.network(logoUrl, fit: BoxFit.cover),
+                  )
+                : const Icon(Icons.store_mall_directory, color: Color(0xFF2B2E4A), size: 20),
+          ),
+          // Ножка пина (треугольник вниз)
+          ClipPath(
+            clipper: _TriangleClipper(),
+            child: Container(
+              width: 10,
+              height: 6,
+              color: Colors.white,
+            ),
+          ),
+         ],
+       );
     }
+
+    // -------------------------------------------------------------------------
+    // СТИЛЬ 3: "SOFT DOT" (Мелкие точки)
+    // -------------------------------------------------------------------------
     return Container(
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: Colors.black,
-        border: Border.all(color: const Color(0xFF00A2FF), width: 2),
+        color: const Color(0xFF4A90E2), // Приятный голубой цвет
+        border: Border.all(color: Colors.white, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.15),
+            blurRadius: 3,
+            offset: const Offset(0, 1),
+          ),
+        ],
       ),
       child: const Center(
-        child: Icon(Icons.circle, color: Color(0xFF00A2FF), size: 15),
+        child: SizedBox(), // Пустой центр, просто цветная точка
       ),
     );
   }
@@ -767,4 +863,18 @@ class _MapScreenState extends State<MapScreen> {
       ),
     );
   }
+}
+
+// Простой клиппер для треугольника (ножки пина)
+class _TriangleClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    final path = Path();
+    path.lineTo(size.width / 2, size.height);
+    path.lineTo(size.width, 0);
+    path.close();
+    return path;
+  }
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }

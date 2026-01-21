@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:latlong2/latlong.dart' hide Path;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/admin_logger.dart';
 
@@ -197,8 +197,8 @@ class _CompanyBranchesScreenState extends State<CompanyBranchesScreen> {
                                     markers: [
                                       Marker(
                                         point: tempLocation,
-                                        width: mapPriority == 2 ? 60 : (mapPriority == 1 ? 50 : 30),
-                                        height: mapPriority == 2 ? 60 : (mapPriority == 1 ? 50 : 30),
+                                        width: mapPriority == 1 ? 140 : (mapPriority == 2 ? 50 : 20),
+                                        height: mapPriority == 1 ? 50 : (mapPriority == 2 ? 50 : 20),
                                         child: _buildPreviewMarker(mapPriority),
                                       ),
                                     ],
@@ -257,41 +257,101 @@ class _CompanyBranchesScreenState extends State<CompanyBranchesScreen> {
   }
 
   Widget _buildPreviewMarker(int priority) {
-    if (priority == 1) { // 1 = Large
-      return Container(
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(color: const Color(0xFF00A2FF), width: 2),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF00A2FF).withOpacity(0.5),
-              blurRadius: 8,
-              spreadRadius: 2,
+    if (priority == 1) { // 1 = Large (Smart Chip)
+      return Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(
+            height: 40,
+            padding: const EdgeInsets.only(right: 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: Colors.grey.withOpacity(0.2), width: 1),
+              boxShadow: [
+                 BoxShadow(
+                   color: Colors.black.withOpacity(0.3),
+                   blurRadius: 8,
+                   offset: const Offset(0, 4),
+                 ),
+              ],
             ),
-          ],
-        ),
-        child: const CircleAvatar(
-          backgroundColor: Colors.black,
-          child: Icon(Icons.star, color: Colors.white),
-        ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                 Container(
+                   width: 40,
+                   height: 40,
+                   decoration: BoxDecoration(
+                     color: Colors.grey[100],
+                     shape: BoxShape.circle, 
+                     border: Border.all(color: Colors.white, width: 2),
+                   ),
+                   child: const Icon(Icons.star, color: Colors.orange, size: 20),
+                 ),
+                 const SizedBox(width: 8),
+                 Flexible(
+                   child: Text(
+                     _addressCtrl.text.isEmpty ? "Название" : _addressCtrl.text,
+                     style: const TextStyle(
+                       color: Colors.black87,
+                       fontWeight: FontWeight.w600,
+                       fontSize: 12,
+                     ),
+                     maxLines: 1,
+                     overflow: TextOverflow.ellipsis,
+                   ),
+                 ),
+              ],
+            ),
+          ),
+        ],
       );
-    } else if (priority == 2) { // 2 = Medium
-      return Container(
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: Colors.orange,
-          border: Border.all(color: Colors.white, width: 2),
-        ),
-        child: const Icon(Icons.store, color: Colors.white, size: 30),
-      );
-    } else { // 3 (or others) = Small
+    } else if (priority == 2) { // 2 = Medium (Floating Pin)
+       return Column(
+         mainAxisSize: MainAxisSize.min,
+         children: [
+           Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white,
+              border: Border.all(color: Colors.grey.withOpacity(0.2), width: 1),
+               boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.2),
+                  blurRadius: 6,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: const Icon(Icons.store_mall_directory, color: Color(0xFF2B2E4A), size: 20),
+          ),
+          ClipPath(
+            clipper: _TriangleClipper(),
+            child: Container(
+              width: 10,
+              height: 6,
+              color: Colors.white,
+            ),
+          ),
+         ],
+       );
+    } else { // 3 = Small (Soft Dot)
       return Container(
          decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: Colors.black,
-          border: Border.all(color: Colors.white, width: 1),
+          color: const Color(0xFF4A90E2),
+          border: Border.all(color: Colors.white, width: 2),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.15),
+              blurRadius: 3,
+              offset: const Offset(0, 1),
+            ),
+          ],
         ),
-        child: const Icon(Icons.circle, color: Colors.white, size: 10),
+        child: const Center(child: SizedBox()),
       );
     }
   }
@@ -549,4 +609,17 @@ class _CompanyBranchesScreenState extends State<CompanyBranchesScreen> {
               ),
     );
   }
+}
+
+class _TriangleClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    final path = Path();
+    path.lineTo(size.width / 2, size.height);
+    path.lineTo(size.width, 0);
+    path.close();
+    return path;
+  }
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }
