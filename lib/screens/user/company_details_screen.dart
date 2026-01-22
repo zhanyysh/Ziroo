@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:go_router/go_router.dart';
-import '../map_screen.dart';
+import '../map/map_screen.dart';
 
 class CompanyDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> company;
