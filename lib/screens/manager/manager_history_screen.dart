@@ -11,36 +11,69 @@ class ManagerHistoryScreen extends StatefulWidget {
 class _ManagerHistoryScreenState extends State<ManagerHistoryScreen> {
   final _supabase = Supabase.instance.client;
   List<Map<String, dynamic>> _transactions = [];
+  List<Map<String, dynamic>> _allBranches = [];
   bool _loading = true;
   String? _branchId;
+  int _selectedBranchIndex = 0;
 
   @override
   void initState() {
     super.initState();
-    _loadTransactions();
+    _loadBranches();
   }
 
-  Future<void> _loadTransactions() async {
-    setState(() => _loading = true);
-    
+  Future<void> _loadBranches() async {
     try {
       final userId = _supabase.auth.currentUser?.id;
       if (userId == null) return;
 
-      // Get manager's branch
-      final branchData = await _supabase
-          .from('company_branches')
-          .select('id')
-          .eq('manager_id', userId)
-          .maybeSingle();
-
-      if (branchData == null) {
-        setState(() => _loading = false);
-        return;
+      // Получаем все филиалы менеджера через RPC
+      final branchesData = await _supabase
+          .rpc('get_manager_branches', params: {'p_manager_id': userId});
+      
+      List<Map<String, dynamic>> branches = [];
+      
+      if (branchesData != null && (branchesData as List).isNotEmpty) {
+        branches = List<Map<String, dynamic>>.from(branchesData);
+      } else {
+        // Fallback на старый способ
+        final fallbackData = await _supabase
+            .from('company_branches')
+            .select('*, companies(*)')
+            .eq('manager_id', userId);
+        
+        if (fallbackData != null) {
+          branches = List<Map<String, dynamic>>.from(fallbackData);
+        }
       }
 
-      _branchId = branchData['id'];
+      _allBranches = branches;
 
+      if (branches.isNotEmpty) {
+        _branchId = branches[0]['id'];
+        await _loadTransactions();
+      } else {
+        setState(() => _loading = false);
+      }
+    } catch (e) {
+      setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _selectBranch(int index) async {
+    if (index < 0 || index >= _allBranches.length) return;
+    
+    _selectedBranchIndex = index;
+    _branchId = _allBranches[index]['id'];
+    await _loadTransactions();
+  }
+
+  Future<void> _loadTransactions() async {
+    if (_branchId == null) return;
+    
+    setState(() => _loading = true);
+    
+    try {
       // Get transactions without join to profiles
       final data = await _supabase
           .from('transactions')
@@ -109,19 +142,86 @@ class _ManagerHistoryScreenState extends State<ManagerHistoryScreen> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : _transactions.isEmpty
-              ? _buildEmptyState()
-              : RefreshIndicator(
-                  onRefresh: _loadTransactions,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _transactions.length,
-                    itemBuilder: (context, index) {
-                      final t = _transactions[index];
-                      return _buildTransactionCard(t, theme);
-                    },
-                  ),
-                ),
+          : _allBranches.isEmpty
+              ? _buildNoBranchState()
+              : _transactions.isEmpty
+                  ? Column(
+                      children: [
+                        if (_allBranches.length > 1) _buildBranchSelector(theme),
+                        Expanded(child: _buildEmptyState()),
+                      ],
+                    )
+                  : RefreshIndicator(
+                      onRefresh: _loadTransactions,
+                      child: Column(
+                        children: [
+                          if (_allBranches.length > 1) _buildBranchSelector(theme),
+                          Expanded(
+                            child: ListView.builder(
+                              padding: const EdgeInsets.all(16),
+                              itemCount: _transactions.length,
+                              itemBuilder: (context, index) {
+                                final t = _transactions[index];
+                                return _buildTransactionCard(t, theme);
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+    );
+  }
+
+  Widget _buildBranchSelector(ThemeData theme) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: Row(
+        children: [
+          Icon(Icons.filter_list, color: theme.colorScheme.primary, size: 20),
+          const SizedBox(width: 8),
+          Text('Филиал:', style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton<int>(
+                value: _selectedBranchIndex,
+                isExpanded: true,
+                isDense: true,
+                items: _allBranches.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final branch = entry.value;
+                  final company = branch['companies'] as Map<String, dynamic>?;
+                  return DropdownMenuItem<int>(
+                    value: index,
+                    child: Text(
+                      '${company?['name'] ?? ''} - ${branch['name'] ?? ''}',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  );
+                }).toList(),
+                onChanged: (index) {
+                  if (index != null) _selectBranch(index);
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoBranchState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.store_mall_directory_outlined, size: 80, color: Colors.grey[400]),
+          const SizedBox(height: 16),
+          const Text('Филиал не назначен', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        ],
+      ),
     );
   }
 

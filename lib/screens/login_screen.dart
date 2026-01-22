@@ -58,32 +58,40 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _nativeGoogleSignIn() async {
     setState(() => _loading = true);
     try {
+      // Web Client ID из Google Cloud Console (OAuth 2.0 Client ID типа "Web application")
       const webClientId =
           '713667737926-ptnfpas2e7b12i4kj1cqenhktugolmof.apps.googleusercontent.com';
-      const iosClientId =
-          '713667737926-6qkg6ikl86a841sttnkegm7v701nrttn.apps.googleusercontent.com';
-      final scopes = ['email', 'profile'];
+      
       final googleSignIn = GoogleSignIn.instance;
+      
+      // Инициализация с serverClientId (необходим для получения idToken)
       await googleSignIn.initialize(
         serverClientId: webClientId,
-        clientId: iosClientId,
       );
-      final googleUser = await googleSignIn.attemptLightweightAuthentication();
+      
+      // Сначала пробуем "лёгкую" авторизацию (если пользователь уже входил)
+      var googleUser = await googleSignIn.attemptLightweightAuthentication();
+      
+      // Если не удалось - показываем полный диалог выбора аккаунта
       if (googleUser == null) {
-        // User canceled
+        googleUser = await googleSignIn.authenticate();
+      }
+      
+      // Пользователь отменил вход
+      if (googleUser == null) {
         return;
       }
-      final authorization =
-          await googleUser.authorizationClient.authorizationForScopes(scopes) ??
-          await googleUser.authorizationClient.authorizeScopes(scopes);
+      
       final idToken = googleUser.authentication.idToken;
+      
       if (idToken == null) {
-        throw const AuthException('No ID Token found.');
+        throw const AuthException('Не удалось получить ID Token от Google.');
       }
+      
+      // Авторизация в Supabase (accessToken не обязателен для idToken flow)
       await Supabase.instance.client.auth.signInWithIdToken(
         provider: OAuthProvider.google,
         idToken: idToken,
-        accessToken: authorization.accessToken,
       );
       
       if (mounted) {

@@ -15,9 +15,11 @@ class _ManagerScanScreenState extends State<ManagerScanScreen> {
   bool _isScanning = true;
   bool _loading = true;
   
+  List<Map<String, dynamic>> _allBranches = [];
   Map<String, dynamic>? _branch;
   Map<String, dynamic>? _company;
   int _discountPercent = 0;
+  int _selectedBranchIndex = 0;
 
   @override
   void initState() {
@@ -30,19 +32,31 @@ class _ManagerScanScreenState extends State<ManagerScanScreen> {
       final userId = _supabase.auth.currentUser?.id;
       if (userId == null) return;
 
-      final branchData = await _supabase
-          .from('company_branches')
-          .select('*, companies(*)')
-          .eq('manager_id', userId)
-          .maybeSingle();
+      // Получаем ВСЕ филиалы менеджера (через таблицу branch_managers)
+      final branchesData = await _supabase
+          .rpc('get_manager_branches', params: {'p_manager_id': userId});
 
-      if (branchData != null && mounted) {
-        setState(() {
-          _branch = branchData;
-          _company = branchData['companies'];
-          _discountPercent = _company?['discount_percentage'] ?? 0;
-          _loading = false;
-        });
+      List<Map<String, dynamic>> branches = [];
+      
+      if (branchesData != null && (branchesData as List).isNotEmpty) {
+        branches = List<Map<String, dynamic>>.from(branchesData);
+      } else {
+        // Fallback: пробуем старый способ (через manager_id)
+        final fallbackData = await _supabase
+            .from('company_branches')
+            .select('*, companies(*)')
+            .eq('manager_id', userId);
+        
+        if (fallbackData != null) {
+          branches = List<Map<String, dynamic>>.from(fallbackData);
+        }
+      }
+      
+      _allBranches = branches;
+      
+      if (branches.isNotEmpty && mounted) {
+        _selectBranch(0);
+        setState(() => _loading = false);
       } else {
         setState(() => _loading = false);
       }
@@ -51,6 +65,25 @@ class _ManagerScanScreenState extends State<ManagerScanScreen> {
         setState(() => _loading = false);
       }
     }
+  }
+
+  void _selectBranch(int index) {
+    if (index < 0 || index >= _allBranches.length) return;
+    
+    _selectedBranchIndex = index;
+    final branchData = _allBranches[index];
+    
+    // RPC возвращает companies как JSON
+    final companiesData = branchData['companies'];
+    final company = companiesData is Map<String, dynamic> 
+        ? companiesData 
+        : null;
+    
+    setState(() {
+      _branch = branchData;
+      _company = company;
+      _discountPercent = company?['discount_percentage'] ?? 0;
+    });
   }
 
   void _onQRDetected(String customerId) {
@@ -195,6 +228,48 @@ class _ManagerScanScreenState extends State<ManagerScanScreen> {
       ),
       body: Column(
         children: [
+          // Branch selector (если несколько филиалов)
+          if (_allBranches.length > 1)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: theme.colorScheme.primaryContainer,
+              child: Row(
+                children: [
+                  Icon(Icons.swap_horiz, color: theme.colorScheme.primary, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<int>(
+                        value: _selectedBranchIndex,
+                        isExpanded: true,
+                        isDense: true,
+                        style: TextStyle(
+                          color: theme.colorScheme.onPrimaryContainer,
+                          fontSize: 14,
+                        ),
+                        items: _allBranches.asMap().entries.map((entry) {
+                          final index = entry.key;
+                          final branch = entry.value;
+                          final company = branch['companies'] as Map<String, dynamic>?;
+                          return DropdownMenuItem<int>(
+                            value: index,
+                            child: Text(
+                              '${company?['name'] ?? ''} - ${branch['name'] ?? ''}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          );
+                        }).toList(),
+                        onChanged: (index) {
+                          if (index != null) _selectBranch(index);
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          
           // Company info
           Container(
             width: double.infinity,
@@ -202,9 +277,27 @@ class _ManagerScanScreenState extends State<ManagerScanScreen> {
             color: theme.colorScheme.surfaceContainerHighest,
             child: Row(
               children: [
-                Icon(
-                  Icons.store,
-                  color: theme.colorScheme.primary,
+                // Logo
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.primaryContainer,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: _company?['logo_url'] != null
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.network(
+                            _company!['logo_url'],
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Icon(
+                              Icons.store,
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                        )
+                      : Icon(Icons.store, color: theme.colorScheme.primary),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -220,6 +313,22 @@ class _ManagerScanScreenState extends State<ManagerScanScreen> {
                         style: theme.textTheme.bodySmall,
                       ),
                     ],
+                  ),
+                ),
+                // Discount badge
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '-$_discountPercent%',
+                    style: const TextStyle(
+                      color: Colors.green,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
                   ),
                 ),
               ],

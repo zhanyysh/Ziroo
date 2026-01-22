@@ -15,6 +15,7 @@ class CompanyBranchesScreen extends StatefulWidget {
 class _CompanyBranchesScreenState extends State<CompanyBranchesScreen> {
   List<Map<String, dynamic>> branches = [];
   List<Map<String, dynamic>> managers = []; // Available managers
+  Map<String, List<Map<String, dynamic>>> branchManagersMap = {}; // branch_id -> list of managers
   bool loading = true;
   final MapController _mapController = MapController();
   LatLng _selectedLocation = const LatLng(42.8746, 74.5698); // Default Bishkek
@@ -44,6 +45,35 @@ class _CompanyBranchesScreenState extends State<CompanyBranchesScreen> {
     }
   }
 
+  Future<void> loadBranchManagers() async {
+    try {
+      // Загружаем все назначения менеджеров для филиалов этой компании
+      final data = await Supabase.instance.client
+          .from('branch_managers')
+          .select('branch_id, manager_id, profiles!branch_managers_manager_id_fkey(id, full_name, email)')
+          .inFilter('branch_id', branches.map((b) => b['id']).toList());
+
+      final Map<String, List<Map<String, dynamic>>> map = {};
+      for (var item in data) {
+        final branchId = item['branch_id'] as String;
+        final profile = item['profiles'] as Map<String, dynamic>?;
+        if (profile != null) {
+          map.putIfAbsent(branchId, () => []);
+          map[branchId]!.add(profile);
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          branchManagersMap = map;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading branch managers: $e');
+      // Fallback: используем старый способ через manager_id
+    }
+  }
+
   Future<void> loadBranches() async {
     setState(() => loading = true);
     try {
@@ -57,6 +87,8 @@ class _CompanyBranchesScreenState extends State<CompanyBranchesScreen> {
         branches = List<Map<String, dynamic>>.from(data);
         loading = false;
       });
+      // Загружаем менеджеров после загрузки филиалов
+      loadBranchManagers();
     } catch (e) {
       // If join fails, try without it
       try {
@@ -68,6 +100,7 @@ class _CompanyBranchesScreenState extends State<CompanyBranchesScreen> {
           branches = List<Map<String, dynamic>>.from(data);
           loading = false;
         });
+        loadBranchManagers();
       } catch (e2) {
         setState(() => loading = false);
       }
@@ -445,24 +478,32 @@ class _CompanyBranchesScreenState extends State<CompanyBranchesScreen> {
 
   Future<void> _assignManager(String branchId, String? managerId) async {
     try {
-      await Supabase.instance.client
-          .from('company_branches')
-          .update({'manager_id': managerId})
-          .eq('id', branchId);
+      if (managerId != null) {
+        // Добавляем менеджера в branch_managers
+        await Supabase.instance.client.from('branch_managers').upsert({
+          'branch_id': branchId,
+          'manager_id': managerId,
+          'assigned_by': Supabase.instance.client.auth.currentUser?.id,
+        }, onConflict: 'branch_id, manager_id');
+        
+        // Также обновляем legacy поле manager_id (для обратной совместимости)
+        await Supabase.instance.client
+            .from('company_branches')
+            .update({'manager_id': managerId})
+            .eq('id', branchId);
+      }
 
       await AdminLogger.log(
         'assign_manager',
-        'Назначен менеджер $managerId для филиала $branchId',
+        'Добавлен менеджер $managerId для филиала $branchId',
       );
 
       loadBranches();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              managerId != null ? 'Менеджер назначен' : 'Менеджер удален',
-            ),
+          const SnackBar(
+            content: Text('Менеджер добавлен'),
             backgroundColor: Colors.green,
           ),
         );
@@ -476,81 +517,137 @@ class _CompanyBranchesScreenState extends State<CompanyBranchesScreen> {
     }
   }
 
+  Future<void> _removeManager(String branchId, String managerId) async {
+    try {
+      await Supabase.instance.client
+          .from('branch_managers')
+          .delete()
+          .eq('branch_id', branchId)
+          .eq('manager_id', managerId);
+
+      await AdminLogger.log(
+        'remove_manager',
+        'Удален менеджер $managerId из филиала $branchId',
+      );
+
+      loadBranches();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Менеджер удален'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+      }
+    }
+  }
+
   void _showManagerDialog(Map<String, dynamic> branch) {
-    final currentManagerId = branch['manager_id'] as String?;
-    final profile = branch['profiles'] as Map<String, dynamic>?;
+    final branchId = branch['id'] as String;
+    final assignedManagers = branchManagersMap[branchId] ?? [];
+    final assignedIds = assignedManagers.map((m) => m['id']).toSet();
 
     showDialog(
       context: context,
       builder:
-          (ctx) => AlertDialog(
-            title: const Text('Назначить менеджера'),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Филиал: ${branch['name']}',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  if (profile != null) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      'Текущий менеджер: ${profile['full_name'] ?? profile['email'] ?? 'Без имени'}',
-                      style: TextStyle(color: Colors.grey[600]),
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  const Text('Выберите менеджера:'),
-                  const SizedBox(height: 8),
-                  if (managers.isEmpty)
-                    const Text(
-                      'Нет доступных менеджеров. Сначала создайте пользователя с ролью "manager".',
-                      style: TextStyle(color: Colors.orange),
-                    )
-                  else
-                    ...managers.map((m) {
-                      final isSelected = m['id'] == currentManagerId;
-                      return ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor:
-                              isSelected ? Colors.green : Colors.grey[300],
-                          child: Icon(
-                            isSelected ? Icons.check : Icons.person,
-                            color: isSelected ? Colors.white : Colors.grey[600],
+          (ctx) => StatefulBuilder(
+            builder: (context, setDialogState) {
+              return AlertDialog(
+                title: const Text('Управление менеджерами'),
+                content: SizedBox(
+                  width: double.maxFinite,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Филиал: ${branch['name']}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 16),
+                      
+                      // Назначенные менеджеры
+                      if (assignedManagers.isNotEmpty) ...[
+                        const Text(
+                          'Назначенные менеджеры:',
+                          style: TextStyle(fontWeight: FontWeight.w500),
+                        ),
+                        const SizedBox(height: 8),
+                        ...assignedManagers.map((m) => Card(
+                          child: ListTile(
+                            leading: const CircleAvatar(
+                              backgroundColor: Colors.green,
+                              child: Icon(Icons.person, color: Colors.white),
+                            ),
+                            title: Text(m['full_name'] ?? 'Без имени'),
+                            subtitle: Text(m['email'] ?? ''),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.remove_circle, color: Colors.red),
+                              onPressed: () {
+                                Navigator.pop(ctx);
+                                _removeManager(branchId, m['id']);
+                              },
+                            ),
+                          ),
+                        )),
+                        const SizedBox(height: 16),
+                        const Divider(),
+                      ],
+                      
+                      // Доступные менеджеры для добавления
+                      const Text(
+                        'Добавить менеджера:',
+                        style: TextStyle(fontWeight: FontWeight.w500),
+                      ),
+                      const SizedBox(height: 8),
+                      if (managers.isEmpty)
+                        const Text(
+                          'Нет доступных менеджеров. Сначала создайте пользователя с ролью "manager".',
+                          style: TextStyle(color: Colors.orange),
+                        )
+                      else
+                        SizedBox(
+                          height: 200,
+                          child: ListView(
+                            shrinkWrap: true,
+                            children: managers
+                                .where((m) => !assignedIds.contains(m['id']))
+                                .map((m) => ListTile(
+                                  leading: CircleAvatar(
+                                    backgroundColor: Colors.grey[300],
+                                    child: Icon(Icons.person, color: Colors.grey[600]),
+                                  ),
+                                  title: Text(m['full_name'] ?? 'Без имени'),
+                                  subtitle: Text(m['email'] ?? ''),
+                                  trailing: IconButton(
+                                    icon: const Icon(Icons.add_circle, color: Colors.green),
+                                    onPressed: () {
+                                      Navigator.pop(ctx);
+                                      _assignManager(branchId, m['id']);
+                                    },
+                                  ),
+                                ))
+                                .toList(),
                           ),
                         ),
-                        title: Text(m['full_name'] ?? 'Без имени'),
-                        subtitle: Text(m['email'] ?? ''),
-                        selected: isSelected,
-                        onTap: () {
-                          Navigator.pop(ctx);
-                          _assignManager(branch['id'], m['id']);
-                        },
-                      );
-                    }),
-                ],
-              ),
-            ),
-            actions: [
-              if (currentManagerId != null)
-                TextButton(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    _assignManager(branch['id'], null);
-                  },
-                  child: const Text(
-                    'Удалить менеджера',
-                    style: TextStyle(color: Colors.red),
+                    ],
                   ),
                 ),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Отмена'),
-              ),
-            ],
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('Закрыть'),
+                  ),
+                ],
+              );
+            },
           ),
     );
   }
@@ -572,9 +669,10 @@ class _CompanyBranchesScreenState extends State<CompanyBranchesScreen> {
                 itemCount: branches.length,
                 itemBuilder: (context, index) {
                   final b = branches[index];
-                  final profile = b['profiles'] as Map<String, dynamic>?;
-                  final managerName =
-                      profile?['full_name'] ?? profile?['email'];
+                  final branchId = b['id'] as String;
+                  final assignedManagers = branchManagersMap[branchId] ?? [];
+                  // Fallback на старый способ если branch_managers пуст
+                  final legacyProfile = b['profiles'] as Map<String, dynamic>?;
 
                   return Card(
                     margin: const EdgeInsets.symmetric(
@@ -591,29 +689,47 @@ class _CompanyBranchesScreenState extends State<CompanyBranchesScreen> {
                             '${b['latitude']?.toStringAsFixed(4)}, ${b['longitude']?.toStringAsFixed(4)}',
                           ),
                           const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.person,
-                                size: 16,
-                                color:
-                                    managerName != null
-                                        ? Colors.green
-                                        : Colors.grey,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                managerName ?? 'Менеджер не назначен',
-                                style: TextStyle(
-                                  color:
-                                      managerName != null
-                                          ? Colors.green
-                                          : Colors.grey,
-                                  fontSize: 12,
+                          if (assignedManagers.isNotEmpty)
+                            Wrap(
+                              spacing: 4,
+                              runSpacing: 4,
+                              children: [
+                                ...assignedManagers.map((m) => Chip(
+                                  avatar: const CircleAvatar(
+                                    backgroundColor: Colors.green,
+                                    child: Icon(Icons.person, size: 14, color: Colors.white),
+                                  ),
+                                  label: Text(
+                                    m['full_name'] ?? m['email'] ?? '?',
+                                    style: const TextStyle(fontSize: 11),
+                                  ),
+                                  visualDensity: VisualDensity.compact,
+                                  padding: EdgeInsets.zero,
+                                )),
+                              ],
+                            )
+                          else if (legacyProfile != null)
+                            Row(
+                              children: [
+                                const Icon(Icons.person, size: 16, color: Colors.green),
+                                const SizedBox(width: 4),
+                                Text(
+                                  legacyProfile['full_name'] ?? legacyProfile['email'] ?? 'Менеджер',
+                                  style: const TextStyle(color: Colors.green, fontSize: 12),
                                 ),
-                              ),
-                            ],
-                          ),
+                              ],
+                            )
+                          else
+                            Row(
+                              children: [
+                                Icon(Icons.person, size: 16, color: Colors.grey),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Менеджер не назначен',
+                                  style: TextStyle(color: Colors.grey, fontSize: 12),
+                                ),
+                              ],
+                            ),
                         ],
                       ),
                       isThreeLine: true,

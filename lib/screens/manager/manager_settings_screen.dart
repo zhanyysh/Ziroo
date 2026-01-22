@@ -13,8 +13,7 @@ class ManagerSettingsScreen extends StatefulWidget {
 class _ManagerSettingsScreenState extends State<ManagerSettingsScreen> {
   String? _fullName;
   String? _email;
-  Map<String, dynamic>? _branch;
-  Map<String, dynamic>? _company;
+  List<Map<String, dynamic>> _allBranches = [];
 
   @override
   void initState() {
@@ -34,21 +33,31 @@ class _ManagerSettingsScreenState extends State<ManagerSettingsScreen> {
           .eq('id', user.id)
           .maybeSingle();
 
-      // Get branch
-      final branchData = await Supabase.instance.client
-          .from('company_branches')
-          .select('*, companies(*)')
-          .eq('manager_id', user.id)
-          .maybeSingle();
+      // Get all branches через RPC
+      final branchesData = await Supabase.instance.client
+          .rpc('get_manager_branches', params: {'p_manager_id': user.id});
+      
+      List<Map<String, dynamic>> branches = [];
+      
+      if (branchesData != null && (branchesData as List).isNotEmpty) {
+        branches = List<Map<String, dynamic>>.from(branchesData);
+      } else {
+        // Fallback на старый способ
+        final fallbackData = await Supabase.instance.client
+            .from('company_branches')
+            .select('*, companies(*)')
+            .eq('manager_id', user.id);
+        
+        if (fallbackData != null) {
+          branches = List<Map<String, dynamic>>.from(fallbackData);
+        }
+      }
 
       if (mounted) {
         setState(() {
           _fullName = profile?['full_name'];
           _email = user.email;
-          if (branchData != null) {
-            _branch = branchData;
-            _company = branchData['companies'];
-          }
+          _allBranches = branches;
         });
       }
     } catch (e) {
@@ -154,8 +163,8 @@ class _ManagerSettingsScreenState extends State<ManagerSettingsScreen> {
           ),
           const SizedBox(height: 16),
 
-          // Branch info
-          if (_branch != null) ...[
+          // Branch info - показываем все филиалы
+          if (_allBranches.isNotEmpty) ...[
             Card(
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               child: Padding(
@@ -167,9 +176,9 @@ class _ManagerSettingsScreenState extends State<ManagerSettingsScreen> {
                       children: [
                         Icon(Icons.store, color: theme.colorScheme.primary),
                         const SizedBox(width: 12),
-                        const Text(
-                          'Мой филиал',
-                          style: TextStyle(
+                        Text(
+                          _allBranches.length == 1 ? 'Мой филиал' : 'Мои филиалы (${_allBranches.length})',
+                          style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                           ),
@@ -177,9 +186,94 @@ class _ManagerSettingsScreenState extends State<ManagerSettingsScreen> {
                       ],
                     ),
                     const Divider(height: 24),
-                    _buildInfoRow('Магазин', _company?['name'] ?? '-'),
-                    _buildInfoRow('Филиал', _branch?['name'] ?? '-'),
-                    _buildInfoRow('Скидка', '${_company?['discount_percentage'] ?? 0}%'),
+                    ..._allBranches.map((branch) {
+                      final company = branch['companies'] as Map<String, dynamic>?;
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            // Logo
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: theme.colorScheme.primaryContainer,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: company?['logo_url'] != null
+                                  ? ClipRRect(
+                                      borderRadius: BorderRadius.circular(8),
+                                      child: Image.network(
+                                        company!['logo_url'],
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => Icon(
+                                          Icons.store,
+                                          color: theme.colorScheme.primary,
+                                        ),
+                                      ),
+                                    )
+                                  : Icon(Icons.store, color: theme.colorScheme.primary),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    company?['name'] ?? 'Компания',
+                                    style: const TextStyle(fontWeight: FontWeight.bold),
+                                  ),
+                                  Text(
+                                    branch['name'] ?? 'Филиал',
+                                    style: theme.textTheme.bodySmall,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.green.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                '-${company?['discount_percentage'] ?? 0}%',
+                                style: const TextStyle(
+                                  color: Colors.green,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+          ] else ...[
+            Card(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.orange),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Вам ещё не назначен филиал. Обратитесь к администратору.',
+                        style: TextStyle(color: Colors.grey[600]),
+                      ),
+                    ),
                   ],
                 ),
               ),
