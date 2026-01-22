@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:image_cropper/image_cropper.dart';
 import 'company_branches_screen.dart';
 import 'company_events_screen.dart';
 import '../../services/admin_logger.dart';
@@ -29,7 +30,9 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
     try {
       final data = await Supabase.instance.client
           .from('companies')
-          .select('id, name, description, discount_percentage, logo_url, category');
+          .select(
+            'id, name, description, discount_percentage, logo_url, category',
+          );
 
       setState(() {
         companies = List<Map<String, dynamic>>.from(data);
@@ -51,7 +54,7 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
       final name = (c['name'] as String? ?? '').toLowerCase();
       final desc = (c['description'] as String? ?? '').toLowerCase();
       return name.contains(_searchQuery.toLowerCase()) ||
-             desc.contains(_searchQuery.toLowerCase());
+          desc.contains(_searchQuery.toLowerCase());
     }).toList();
   }
 
@@ -59,7 +62,7 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final filtered = _filteredCompanies;
-    
+
     return Scaffold(
       body: CustomScrollView(
         slivers: [
@@ -134,7 +137,7 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
               ),
             ),
           ),
-          
+
           // Content
           if (loading)
             const SliverFillRemaining(
@@ -153,11 +156,10 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      _searchQuery.isEmpty ? 'Нет компаний' : 'Ничего не найдено',
-                      style: TextStyle(
-                        fontSize: 18,
-                        color: Colors.grey[600],
-                      ),
+                      _searchQuery.isEmpty
+                          ? 'Нет компаний'
+                          : 'Ничего не найдено',
+                      style: TextStyle(fontSize: 18, color: Colors.grey[600]),
                     ),
                   ],
                 ),
@@ -167,13 +169,10 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
             SliverPadding(
               padding: const EdgeInsets.all(16),
               sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, i) {
-                    final c = filtered[i];
-                    return _buildCompanyCard(c, theme);
-                  },
-                  childCount: filtered.length,
-                ),
+                delegate: SliverChildBuilderDelegate((context, i) {
+                  final c = filtered[i];
+                  return _buildCompanyCard(c, theme);
+                }, childCount: filtered.length),
               ),
             ),
         ],
@@ -194,23 +193,19 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
   Widget _buildCompanyCard(Map<String, dynamic> c, ThemeData theme) {
     final discount = c['discount_percentage'] ?? 0;
     final category = c['category'] as String? ?? 'Другое';
-    
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: theme.dividerColor.withOpacity(0.2),
-        ),
+        side: BorderSide(color: theme.dividerColor.withOpacity(0.2)),
       ),
       child: InkWell(
         onTap: () {
           Navigator.push(
             context,
-            MaterialPageRoute(
-              builder: (_) => CompanyFormScreen(company: c),
-            ),
+            MaterialPageRoute(builder: (_) => CompanyFormScreen(company: c)),
           ).then((_) => loadCompanies());
         },
         borderRadius: BorderRadius.circular(16),
@@ -226,23 +221,25 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
                   color: theme.colorScheme.primaryContainer,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: c['logo_url'] != null
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.network(
-                          c['logo_url'],
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Icon(
-                            Icons.store,
-                            color: theme.colorScheme.primary,
+                child:
+                    c['logo_url'] != null
+                        ? ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: Image.network(
+                            c['logo_url'],
+                            fit: BoxFit.cover,
+                            errorBuilder:
+                                (_, __, ___) => Icon(
+                                  Icons.store,
+                                  color: theme.colorScheme.primary,
+                                ),
                           ),
+                        )
+                        : Icon(
+                          Icons.store,
+                          color: theme.colorScheme.primary,
+                          size: 28,
                         ),
-                      )
-                    : Icon(
-                        Icons.store,
-                        color: theme.colorScheme.primary,
-                        size: 28,
-                      ),
               ),
               const SizedBox(width: 16),
               // Info
@@ -315,12 +312,18 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
 
   Color _getCategoryColor(String category) {
     switch (category) {
-      case 'Еда': return Colors.orange;
-      case 'Одежда': return Colors.pink;
-      case 'Электроника': return Colors.blue;
-      case 'Услуги': return Colors.purple;
-      case 'Развлечения': return Colors.red;
-      default: return Colors.grey;
+      case 'Еда':
+        return Colors.orange;
+      case 'Одежда':
+        return Colors.pink;
+      case 'Электроника':
+        return Colors.blue;
+      case 'Услуги':
+        return Colors.purple;
+      case 'Развлечения':
+        return Colors.red;
+      default:
+        return Colors.grey;
     }
   }
 }
@@ -347,7 +350,7 @@ class _CompanyFormScreenState extends State<CompanyFormScreen> {
     'Электроника',
     'Услуги',
     'Развлечения',
-    'Другое'
+    'Другое',
   ];
   bool loading = false;
   File? _logoFile;
@@ -369,9 +372,36 @@ class _CompanyFormScreenState extends State<CompanyFormScreen> {
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
     if (pickedFile != null) {
-      setState(() {
-        _logoFile = File(pickedFile.path);
-      });
+      final croppedFile = await ImageCropper().cropImage(
+        sourcePath: pickedFile.path,
+        // cropStyle removed from here
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'Логотип',
+            toolbarColor: Colors.deepPurple,
+            toolbarWidgetColor: Colors.white,
+            initAspectRatio: CropAspectRatioPreset.square,
+            lockAspectRatio: false,
+            cropStyle: CropStyle.circle, // <-- Moved here
+            aspectRatioPresets: [
+              CropAspectRatioPreset.square,
+              CropAspectRatioPreset.original,
+            ],
+          ),
+          IOSUiSettings(
+            title: 'Логотип',
+            cropStyle: CropStyle.circle, // <-- Moved here
+            aspectRatioLockEnabled: true,
+            resetAspectRatioEnabled: false,
+          ),
+        ],
+      );
+
+      if (croppedFile != null) {
+        setState(() {
+          _logoFile = File(croppedFile.path);
+        });
+      }
     }
   }
 
@@ -614,12 +644,13 @@ class _CompanyFormScreenState extends State<CompanyFormScreen> {
                   labelText: 'Категория',
                   border: OutlineInputBorder(),
                 ),
-                items: _categories.map((String category) {
-                  return DropdownMenuItem<String>(
-                    value: category,
-                    child: Text(category),
-                  );
-                }).toList(),
+                items:
+                    _categories.map((String category) {
+                      return DropdownMenuItem<String>(
+                        value: category,
+                        child: Text(category),
+                      );
+                    }).toList(),
                 onChanged: (String? newValue) {
                   setState(() {
                     _selectedCategory = newValue!;
