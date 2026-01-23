@@ -329,6 +329,35 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
 
                   const SizedBox(height: 24),
 
+                  // Subscription Section
+                  _buildSectionTitle('Подписка', Icons.workspace_premium_outlined, theme),
+                  const SizedBox(height: 8),
+                  _buildCard(
+                    theme: theme,
+                    isDark: isDark,
+                    children: [
+                      _buildListTile(
+                        icon: Icons.star,
+                        iconColor: Colors.amber,
+                        title: 'Управление подпиской',
+                        subtitle: 'Планы и оплата',
+                        onTap: () => context.push('/subscription'),
+                        theme: theme,
+                      ),
+                      _buildDivider(theme),
+                      _buildListTile(
+                        icon: Icons.payment,
+                        iconColor: Colors.green,
+                        title: 'Способы оплаты',
+                        subtitle: 'Банковские карты',
+                        onTap: () => context.push('/payment'),
+                        theme: theme,
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 24),
+
                   // App Settings Section
                   _buildSectionTitle('Приложение', Icons.settings_outlined, theme),
                   const SizedBox(height: 8),

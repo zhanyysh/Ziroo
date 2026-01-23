@@ -52,6 +52,7 @@ dependencies:
   flutter_map_marker_cluster: ^8.2.2
   image_cropper: ^11.0.0
   flutter_compass: ^0.8.1
+  flutter_stripe: ^11.4.0
 
 dev_dependencies:
   flutter_test:
