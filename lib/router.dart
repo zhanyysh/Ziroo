@@ -20,6 +20,8 @@ import 'screens/manager/manager_home_screen.dart';
 import 'screens/manager/manager_scan_screen.dart';
 import 'screens/manager/manager_history_screen.dart';
 import 'screens/manager/manager_settings_screen.dart';
+import 'screens/user/subscription_screen.dart';
+import 'screens/user/payment_screen.dart';
 import 'widgets/auth_wrapper.dart';
 
 // Ключи навигации нужны для управления стеком
@@ -40,6 +42,26 @@ final router = GoRouter(
     GoRoute(
       path: '/login',
       builder: (context, state) => const LoginScreen(),
+    ),
+
+    // Экран оплаты (отдельный маршрут без нижней панели)
+    GoRoute(
+      path: '/payment',
+      builder: (context, state) {
+        final extra = state.extra as Map<String, dynamic>?;
+        return PaymentScreen(
+          companyId: extra?['company_id'],
+          companyName: extra?['company_name'],
+          amount: extra?['amount'],
+          description: extra?['description'],
+        );
+      },
+    ),
+
+    // Экран подписки (отдельный маршрут без нижней панели)
+    GoRoute(
+      path: '/subscription',
+      builder: (context, state) => const SubscriptionScreen(),
     ),
 
     // Админ панель (ShellRoute)

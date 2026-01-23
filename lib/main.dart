@@ -1,10 +1,15 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/material.dart';
 import 'services/theme_service.dart';
+import 'services/stripe_service.dart';
 import 'router.dart'; // Импортируем наш роутер
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Инициализация Stripe
+  await StripeService.initialize();
+  
   await Supabase.initialize(
     url: "https://rmqwopgsvpbybbxrtccc.supabase.co",
     anonKey:
