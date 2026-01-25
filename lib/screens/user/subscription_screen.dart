@@ -15,6 +15,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   bool _loading = false;
   String? _currentPlan;
   DateTime? _subscriptionEndDate;
+  String? _stripeSubscriptionId;  // ID подписки в Stripe для отмены
   
   // TODO: Замените на ваши Payment Links из Stripe Dashboard
   // Stripe Dashboard → Product catalog → Create product → Create payment link
@@ -93,10 +94,12 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
         setState(() {
           _currentPlan = data['plan_id'];
           _subscriptionEndDate = DateTime.tryParse(data['current_period_end'] ?? '');
+          _stripeSubscriptionId = data['stripe_subscription_id'];
         });
       } else {
         setState(() {
           _currentPlan = 'free';
+          _stripeSubscriptionId = null;
         });
       }
     } catch (e) {
@@ -233,6 +236,76 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     );
   }
 
+  /// Отмена текущей подписки
+  Future<void> _cancelSubscription() async {
+    if (_stripeSubscriptionId == null) {
+      _showSnackBar('Нет активной подписки для отмены');
+      return;
+    }
+
+    // Диалог подтверждения
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Отменить подписку?'),
+        content: const Text(
+          'Ваша подписка будет отменена. Вы сможете пользоваться премиум-функциями до конца оплаченного периода.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Нет'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Да, отменить'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _loading = true);
+
+    try {
+      // Вызываем API для отмены
+      final success = await StripeService.instance.cancelSubscription(
+        _stripeSubscriptionId!,
+      );
+
+      if (success) {
+        // Обновляем статус в локальной БД
+        final userId = Supabase.instance.client.auth.currentUser?.id;
+        if (userId != null) {
+          await Supabase.instance.client
+              .from('subscriptions')
+              .update({'status': 'canceled'})
+              .eq('stripe_subscription_id', _stripeSubscriptionId!);
+        }
+
+        setState(() {
+          _currentPlan = 'free';
+          _stripeSubscriptionId = null;
+          _subscriptionEndDate = null;
+        });
+
+        if (mounted) {
+          _showSnackBar('Подписка успешно отменена', isSuccess: true);
+        }
+      } else {
+        _showSnackBar('Не удалось отменить подписку');
+      }
+    } catch (e) {
+      _showSnackBar('Ошибка: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -297,10 +370,29 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                               ],
                             ),
                           ),
+                          // Кнопка отмены подписки
+                          IconButton(
+                            onPressed: _cancelSubscription,
+                            icon: const Icon(Icons.cancel_outlined),
+                            tooltip: 'Отменить подписку',
+                            color: Colors.red.shade400,
+                          ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    // Текстовая кнопка отмены
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: _cancelSubscription,
+                        icon: Icon(Icons.cancel, size: 18, color: Colors.red.shade400),
+                        label: Text(
+                          'Отменить подписку',
+                          style: TextStyle(color: Colors.red.shade400),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                   ],
 
                   // Планы подписки
