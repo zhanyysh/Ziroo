@@ -335,10 +335,50 @@
         return
         }
 
-        // Определяем plan_id из price
-        const priceId = subscription.items.data[0]?.price?.id || ''
-        let planId = 'basic'
-        if (priceId.includes('premium')) planId = 'premium'
+        // Определяем plan_id из price metadata (приоритет) или продукта
+        const price = subscription.items.data[0]?.price
+        const priceId = price?.id || ''
+        const productId = price?.product as string || ''
+        
+        let planId = 'basic' // По умолчанию
+        
+        // 1. ПРИОРИТЕТ: проверяем metadata цены (для структуры 1 продукт = несколько цен)
+        if (price?.metadata?.plan_id) {
+            planId = price.metadata.plan_id
+            console.log('Plan from price metadata:', planId)
+        } 
+        // 2. Проверяем nickname цены (можно указать в Stripe Dashboard)
+        else if (price?.nickname) {
+            const nickname = price.nickname.toLowerCase()
+            if (nickname.includes('premium') || nickname.includes('премиум')) {
+                planId = 'premium'
+            } else if (nickname.includes('basic') || nickname.includes('базов')) {
+                planId = 'basic'
+            }
+            console.log('Plan from price nickname:', planId, '- nickname:', price.nickname)
+        }
+        // 3. Определяем по сумме (fallback)
+        else if (price?.unit_amount) {
+            // $2.00 = 200 cents = premium, $1.00 = 100 cents = basic
+            if (price.unit_amount >= 200) {
+                planId = 'premium'
+            } else {
+                planId = 'basic'
+            }
+            console.log('Plan from price amount:', planId, '- amount:', price.unit_amount)
+        }
+        // 4. Fallback: проверяем metadata продукта
+        else {
+            try {
+                const product = await stripe.products.retrieve(productId)
+                if (product.metadata?.plan_id) {
+                    planId = product.metadata.plan_id
+                }
+                console.log('Plan from product metadata:', planId)
+            } catch (e) {
+                console.log('Could not retrieve product, using default plan:', planId)
+            }
+        }
 
         // Безопасное преобразование дат
         const periodStart = subscription.current_period_start 

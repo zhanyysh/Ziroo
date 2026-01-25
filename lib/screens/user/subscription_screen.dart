@@ -20,7 +20,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   // TODO: Замените на ваши Payment Links из Stripe Dashboard
   // Stripe Dashboard → Product catalog → Create product → Create payment link
   static const String _basicPaymentLink = 'https://buy.stripe.com/test_aFacN57Zr8618Bx1qg77O00';
-  static const String _premiumPaymentLink = 'https://buy.stripe.com/test_aFacN57Zr8618Bx1qg77O00';
+  static const String _premiumPaymentLink = 'https://buy.stripe.com/test_3cI6oH5Rj861aJFed277O01';
 
   // Планы подписки
   final List<SubscriptionPlan> _plans = [
@@ -115,13 +115,20 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   }
 
   Future<void> _subscribe(SubscriptionPlan plan) async {
-    if (plan.id == 'free') {
-      _showSnackBar('Вы уже на бесплатном плане');
+    // Если выбран тот же план
+    if (_currentPlan == plan.id) {
+      _showSnackBar('Вы уже на этом плане');
       return;
     }
 
-    if (_currentPlan == plan.id) {
-      _showSnackBar('Вы уже подписаны на этот план');
+    // Если выбран бесплатный план — это отмена текущей подписки
+    if (plan.id == 'free') {
+      if (_currentPlan == 'free' || _currentPlan == null) {
+        _showSnackBar('Вы уже на бесплатном плане');
+        return;
+      }
+      // Переход на бесплатный = отмена платной подписки
+      await _cancelSubscription();
       return;
     }
 
