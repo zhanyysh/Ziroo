@@ -140,6 +140,29 @@ class StripeService {
     }
   }
 
+  /// Обновление подписки (upgrade/downgrade)
+  Future<bool> updateSubscription({
+    required String subscriptionId,
+    required String newPriceId,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$backendUrl/update-subscription'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'subscription_id': subscriptionId,
+          'new_price_id': newPriceId,
+        }),
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      throw Exception('Ошибка обновления подписки: $e');
+    }
+  }
+
   /// Получение списка способов оплаты клиента
   Future<List<PaymentMethod>> getPaymentMethods(String customerId) async {
     try {

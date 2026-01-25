@@ -42,6 +42,8 @@
             return await createPaymentIntent(req)
         case 'create-subscription':
             return await createSubscription(req)
+        case 'update-subscription':
+            return await updateSubscription(req)
         case 'cancel-subscription':
             return await cancelSubscription(req)
         case 'create-setup-intent':
@@ -127,6 +129,31 @@
 
     return new Response(
         JSON.stringify({ success: true }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    )
+    }
+
+    // Обновление подписки (upgrade/downgrade)
+    async function updateSubscription(req: Request) {
+    const { subscription_id, new_price_id } = await req.json()
+
+    // Получаем текущую подписку
+    const subscription = await stripe.subscriptions.retrieve(subscription_id)
+    
+    // Обновляем подписку на новую цену
+    const updatedSubscription = await stripe.subscriptions.update(subscription_id, {
+        items: [{
+            id: subscription.items.data[0].id,
+            price: new_price_id,
+        }],
+        proration_behavior: 'create_prorations', // Перерасчёт стоимости
+    })
+
+    return new Response(
+        JSON.stringify({ 
+            success: true,
+            subscription_id: updatedSubscription.id,
+        }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
     }

@@ -41,7 +41,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       id: 'basic',
       name: 'Базовый',
       price: 299,
-      priceId: 'price_basic_monthly', // ID цены в Stripe
+      priceId: 'price_1Ssmi0FNhGbx2zdpPeP0rW3G', // ID цены в Stripe
       paymentLink: _basicPaymentLink,
       features: [
         'Расширенный доступ',
@@ -55,7 +55,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       id: 'premium',
       name: 'Премиум',
       price: 599,
-      priceId: 'price_premium_monthly', // ID цены в Stripe
+      priceId: 'price_1StPXXFNhGbx2zdpLl6LzhZw', // ID цены в Stripe
       paymentLink: _premiumPaymentLink,
       features: [
         'Полный доступ',
@@ -132,6 +132,12 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       return;
     }
 
+    // Если уже есть активная подписка — обновляем её (upgrade/downgrade)
+    if (_stripeSubscriptionId != null && _currentPlan != 'free' && _currentPlan != null) {
+      await _upgradeSubscription(plan);
+      return;
+    }
+
     // Простой способ: открываем Payment Link в браузере
     if (plan.paymentLink.isNotEmpty && plan.paymentLink.contains('stripe.com')) {
       await _openPaymentLink(plan);
@@ -140,6 +146,82 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
 
     // Полный способ: через бэкенд и Payment Sheet
     await _subscribeViaBackend(plan);
+  }
+
+  /// Обновление подписки (upgrade/downgrade)
+  Future<void> _upgradeSubscription(SubscriptionPlan newPlan) async {
+    // Диалог подтверждения
+    final isUpgrade = _getPlanPrice(_currentPlan) < newPlan.price;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(isUpgrade ? 'Повысить подписку?' : 'Понизить подписку?'),
+        content: Text(
+          isUpgrade 
+            ? 'Вы перейдёте на план "${newPlan.name}" за ${newPlan.price} ₽/месяц. Разница будет списана пропорционально.'
+            : 'Вы перейдёте на план "${newPlan.name}" за ${newPlan.price} ₽/месяц.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(isUpgrade ? 'Повысить' : 'Понизить'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _loading = true);
+
+    try {
+      final success = await StripeService.instance.updateSubscription(
+        subscriptionId: _stripeSubscriptionId!,
+        newPriceId: newPlan.priceId,
+      );
+
+      if (success) {
+        // Обновляем локально
+        setState(() {
+          _currentPlan = newPlan.id;
+        });
+        
+        // Обновляем в БД
+        final userId = Supabase.instance.client.auth.currentUser?.id;
+        if (userId != null) {
+          await Supabase.instance.client
+              .from('subscriptions')
+              .update({'plan_id': newPlan.id})
+              .eq('stripe_subscription_id', _stripeSubscriptionId!);
+        }
+
+        if (mounted) {
+          _showSnackBar('Подписка успешно обновлена!', isSuccess: true);
+        }
+      } else {
+        _showSnackBar('Не удалось обновить подписку');
+      }
+    } catch (e) {
+      _showSnackBar('Ошибка: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  /// Получить цену плана по ID
+  int _getPlanPrice(String? planId) {
+    if (planId == null) return 0;
+    final plan = _plans.firstWhere(
+      (p) => p.id == planId,
+      orElse: () => _plans.first,
+    );
+    return plan.price;
   }
 
   /// Простой способ оплаты через Payment Link (открывается в браузере)
