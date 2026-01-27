@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../services/stripe_service.dart';
@@ -17,13 +18,12 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   DateTime? _subscriptionEndDate;
   String? _stripeSubscriptionId;  // ID подписки в Stripe для отмены
   
-  // TODO: Замените на ваши Payment Links из Stripe Dashboard
-  // Stripe Dashboard → Product catalog → Create product → Create payment link
-  static const String _basicPaymentLink = 'https://buy.stripe.com/test_aFacN57Zr8618Bx1qg77O00';
-  static const String _premiumPaymentLink = 'https://buy.stripe.com/test_3cI6oH5Rj861aJFed277O01';
+  // Payment Links загружаются из .env
+  static String get _basicPaymentLink => dotenv.env['STRIPE_BASIC_PAYMENT_LINK'] ?? '';
+  static String get _premiumPaymentLink => dotenv.env['STRIPE_PREMIUM_PAYMENT_LINK'] ?? '';
 
   // Планы подписки
-  final List<SubscriptionPlan> _plans = [
+  List<SubscriptionPlan> get _plans => [
     SubscriptionPlan(
       id: 'free',
       name: 'Бесплатный',

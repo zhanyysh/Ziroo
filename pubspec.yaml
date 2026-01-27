@@ -53,6 +53,7 @@ dependencies:
   image_cropper: ^11.0.0
   flutter_compass: ^0.8.1
   flutter_stripe: ^11.4.0
+  flutter_dotenv: ^5.2.1
 
 dev_dependencies:
   flutter_test:
@@ -79,6 +80,7 @@ flutter:
   assets:
     - assets/images/logo.jpg
     - assets/images/g-logo.svg
+    - .env
 
 
   # To add assets to your application, add an assets section, like this:

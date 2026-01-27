@@ -1,6 +1,7 @@
 // lib/screens/admin_screen.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
 class UsersScreen extends StatefulWidget {
@@ -107,9 +108,10 @@ class _UsersScreenState extends State<UsersScreen> {
         final session = Supabase.instance.client.auth.currentSession;
         if (session == null) throw Exception('Not logged in');
 
-        // Call your Edge Function (replace with your project ref)
+        // Call your Edge Function
+        final supabaseUrl = dotenv.env['SUPABASE_URL'] ?? '';
         final response = await http.post(
-          Uri.parse('https://rmqwopgsvpbybbxrtccc.supabase.co/functions/v1/delete-user?userId=$userId'),
+          Uri.parse('$supabaseUrl/functions/v1/delete-user?userId=$userId'),
           headers: {
             'Authorization': 'Bearer ${session.accessToken}',
             'Content-Type': 'application/json',

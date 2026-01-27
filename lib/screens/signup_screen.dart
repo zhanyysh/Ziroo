@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -68,10 +69,8 @@ class _SignupScreenState extends State<SignupScreen> {
   Future<void> _nativeGoogleSignIn() async {
     setState(() => _loading = true);
     try {
-      const webClientId =
-          '713667737926-ptnfpas2e7b12i4kj1cqenhktugolmof.apps.googleusercontent.com';
-      const iosClientId =
-          '713667737926-6qkg6ikl86a841sttnkegm7v701nrttn.apps.googleusercontent.com';
+      final webClientId = dotenv.env['GOOGLE_WEB_CLIENT_ID'] ?? '';
+      final iosClientId = dotenv.env['GOOGLE_IOS_CLIENT_ID'] ?? '';
       final scopes = ['email', 'profile'];
       final googleSignIn = GoogleSignIn.instance;
       await googleSignIn.initialize(
