@@ -1,5 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'services/theme_service.dart';
 import 'services/stripe_service.dart';
 import 'router.dart'; // Импортируем наш роутер
@@ -7,13 +8,15 @@ import 'router.dart'; // Импортируем наш роутер
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
+  // Загружаем переменные окружения
+  await dotenv.load(fileName: '.env');
+  
   // Инициализация Stripe
   await StripeService.initialize();
   
   await Supabase.initialize(
-    url: "https://rmqwopgsvpbybbxrtccc.supabase.co",
-    anonKey:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJtcXdvcGdzdnBieWJieHJ0Y2NjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQxNTI1MzgsImV4cCI6MjA3OTcyODUzOH0.znJr6DQp-hD3kHf9gloEuORvS2b3Kv71Jpk64AwbLHk',
+    url: dotenv.env['SUPABASE_URL']!,
+    anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
   );
 
   final themeService = ThemeService();

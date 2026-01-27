@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_stripe/flutter_stripe.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../services/stripe_service.dart';
@@ -15,14 +16,14 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   bool _loading = false;
   String? _currentPlan;
   DateTime? _subscriptionEndDate;
+  String? _stripeSubscriptionId;  // ID подписки в Stripe для отмены
   
-  // TODO: Замените на ваши Payment Links из Stripe Dashboard
-  // Stripe Dashboard → Product catalog → Create product → Create payment link
-  static const String _basicPaymentLink = 'https://buy.stripe.com/test_aFacN57Zr8618Bx1qg77O00';
-  static const String _premiumPaymentLink = 'https://buy.stripe.com/test_aFacN57Zr8618Bx1qg77O00';
+  // Payment Links загружаются из .env
+  static String get _basicPaymentLink => dotenv.env['STRIPE_BASIC_PAYMENT_LINK'] ?? '';
+  static String get _premiumPaymentLink => dotenv.env['STRIPE_PREMIUM_PAYMENT_LINK'] ?? '';
 
   // Планы подписки
-  final List<SubscriptionPlan> _plans = [
+  List<SubscriptionPlan> get _plans => [
     SubscriptionPlan(
       id: 'free',
       name: 'Бесплатный',
@@ -40,7 +41,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       id: 'basic',
       name: 'Базовый',
       price: 299,
-      priceId: 'price_basic_monthly', // ID цены в Stripe
+      priceId: 'price_1Ssmi0FNhGbx2zdpPeP0rW3G', // ID цены в Stripe
       paymentLink: _basicPaymentLink,
       features: [
         'Расширенный доступ',
@@ -54,7 +55,7 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
       id: 'premium',
       name: 'Премиум',
       price: 599,
-      priceId: 'price_premium_monthly', // ID цены в Stripe
+      priceId: 'price_1StPXXFNhGbx2zdpLl6LzhZw', // ID цены в Stripe
       paymentLink: _premiumPaymentLink,
       features: [
         'Полный доступ',
@@ -93,10 +94,12 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
         setState(() {
           _currentPlan = data['plan_id'];
           _subscriptionEndDate = DateTime.tryParse(data['current_period_end'] ?? '');
+          _stripeSubscriptionId = data['stripe_subscription_id'];
         });
       } else {
         setState(() {
           _currentPlan = 'free';
+          _stripeSubscriptionId = null;
         });
       }
     } catch (e) {
@@ -112,13 +115,26 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
   }
 
   Future<void> _subscribe(SubscriptionPlan plan) async {
-    if (plan.id == 'free') {
-      _showSnackBar('Вы уже на бесплатном плане');
+    // Если выбран тот же план
+    if (_currentPlan == plan.id) {
+      _showSnackBar('Вы уже на этом плане');
       return;
     }
 
-    if (_currentPlan == plan.id) {
-      _showSnackBar('Вы уже подписаны на этот план');
+    // Если выбран бесплатный план — это отмена текущей подписки
+    if (plan.id == 'free') {
+      if (_currentPlan == 'free' || _currentPlan == null) {
+        _showSnackBar('Вы уже на бесплатном плане');
+        return;
+      }
+      // Переход на бесплатный = отмена платной подписки
+      await _cancelSubscription();
+      return;
+    }
+
+    // Если уже есть активная подписка — обновляем её (upgrade/downgrade)
+    if (_stripeSubscriptionId != null && _currentPlan != 'free' && _currentPlan != null) {
+      await _upgradeSubscription(plan);
       return;
     }
 
@@ -130,6 +146,82 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
 
     // Полный способ: через бэкенд и Payment Sheet
     await _subscribeViaBackend(plan);
+  }
+
+  /// Обновление подписки (upgrade/downgrade)
+  Future<void> _upgradeSubscription(SubscriptionPlan newPlan) async {
+    // Диалог подтверждения
+    final isUpgrade = _getPlanPrice(_currentPlan) < newPlan.price;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(isUpgrade ? 'Повысить подписку?' : 'Понизить подписку?'),
+        content: Text(
+          isUpgrade 
+            ? 'Вы перейдёте на план "${newPlan.name}" за ${newPlan.price} ₽/месяц. Разница будет списана пропорционально.'
+            : 'Вы перейдёте на план "${newPlan.name}" за ${newPlan.price} ₽/месяц.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Отмена'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(isUpgrade ? 'Повысить' : 'Понизить'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _loading = true);
+
+    try {
+      final success = await StripeService.instance.updateSubscription(
+        subscriptionId: _stripeSubscriptionId!,
+        newPriceId: newPlan.priceId,
+      );
+
+      if (success) {
+        // Обновляем локально
+        setState(() {
+          _currentPlan = newPlan.id;
+        });
+        
+        // Обновляем в БД
+        final userId = Supabase.instance.client.auth.currentUser?.id;
+        if (userId != null) {
+          await Supabase.instance.client
+              .from('subscriptions')
+              .update({'plan_id': newPlan.id})
+              .eq('stripe_subscription_id', _stripeSubscriptionId!);
+        }
+
+        if (mounted) {
+          _showSnackBar('Подписка успешно обновлена!', isSuccess: true);
+        }
+      } else {
+        _showSnackBar('Не удалось обновить подписку');
+      }
+    } catch (e) {
+      _showSnackBar('Ошибка: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  /// Получить цену плана по ID
+  int _getPlanPrice(String? planId) {
+    if (planId == null) return 0;
+    final plan = _plans.firstWhere(
+      (p) => p.id == planId,
+      orElse: () => _plans.first,
+    );
+    return plan.price;
   }
 
   /// Простой способ оплаты через Payment Link (открывается в браузере)
@@ -233,6 +325,76 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
     );
   }
 
+  /// Отмена текущей подписки
+  Future<void> _cancelSubscription() async {
+    if (_stripeSubscriptionId == null) {
+      _showSnackBar('Нет активной подписки для отмены');
+      return;
+    }
+
+    // Диалог подтверждения
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Отменить подписку?'),
+        content: const Text(
+          'Ваша подписка будет отменена. Вы сможете пользоваться премиум-функциями до конца оплаченного периода.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Нет'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Да, отменить'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _loading = true);
+
+    try {
+      // Вызываем API для отмены
+      final success = await StripeService.instance.cancelSubscription(
+        _stripeSubscriptionId!,
+      );
+
+      if (success) {
+        // Обновляем статус в локальной БД
+        final userId = Supabase.instance.client.auth.currentUser?.id;
+        if (userId != null) {
+          await Supabase.instance.client
+              .from('subscriptions')
+              .update({'status': 'canceled'})
+              .eq('stripe_subscription_id', _stripeSubscriptionId!);
+        }
+
+        setState(() {
+          _currentPlan = 'free';
+          _stripeSubscriptionId = null;
+          _subscriptionEndDate = null;
+        });
+
+        if (mounted) {
+          _showSnackBar('Подписка успешно отменена', isSuccess: true);
+        }
+      } else {
+        _showSnackBar('Не удалось отменить подписку');
+      }
+    } catch (e) {
+      _showSnackBar('Ошибка: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -297,10 +459,29 @@ class _SubscriptionScreenState extends State<SubscriptionScreen> {
                               ],
                             ),
                           ),
+                          // Кнопка отмены подписки
+                          IconButton(
+                            onPressed: _cancelSubscription,
+                            icon: const Icon(Icons.cancel_outlined),
+                            tooltip: 'Отменить подписку',
+                            color: Colors.red.shade400,
+                          ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    // Текстовая кнопка отмены
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: _cancelSubscription,
+                        icon: Icon(Icons.cancel, size: 18, color: Colors.red.shade400),
+                        label: Text(
+                          'Отменить подписку',
+                          style: TextStyle(color: Colors.red.shade400),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                   ],
 
                   // Планы подписки

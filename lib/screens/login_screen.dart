@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:go_router/go_router.dart';
 import 'signup_screen.dart';
 import 'phone_auth_screen.dart';
@@ -58,9 +59,8 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _nativeGoogleSignIn() async {
     setState(() => _loading = true);
     try {
-      // Web Client ID из Google Cloud Console (OAuth 2.0 Client ID типа "Web application")
-      const webClientId =
-          '713667737926-ptnfpas2e7b12i4kj1cqenhktugolmof.apps.googleusercontent.com';
+      // Web Client ID из .env
+      final webClientId = dotenv.env['GOOGLE_WEB_CLIENT_ID'] ?? '';
       
       final googleSignIn = GoogleSignIn.instance;
       

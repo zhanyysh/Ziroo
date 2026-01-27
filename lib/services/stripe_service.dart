@@ -1,5 +1,6 @@
 import 'package:flutter_stripe/flutter_stripe.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
@@ -14,13 +15,9 @@ class StripeService {
     return _instance!;
   }
 
-  // TODO: Замените на ваши ключи Stripe
-  // Публичный ключ (можно использовать в клиенте)
-  static const String publishableKey = 'pk_test_51SrGQBFNhGbx2zdpLSmExWftx90FzePpFbkvNpWhu9hokVaFOi77nnGslhLWx2BvzjHU8rbdsue7JwMseKEyJiiT00AembNgYq';
-  
-  // URL вашего бэкенда (Supabase Edge Function или собственный сервер)
-  // Это нужно для создания PaymentIntent на стороне сервера
-  static const String backendUrl = 'https://rmqwopgsvpbybbxrtccc.supabase.co/functions/v1/swift-action';
+  // Ключи загружаются из .env
+  static String get publishableKey => dotenv.env['STRIPE_PUBLISHABLE_KEY'] ?? '';
+  static String get backendUrl => dotenv.env['STRIPE_BACKEND_URL'] ?? '';
 
   /// Инициализация Stripe
   static Future<void> initialize() async {
@@ -137,6 +134,29 @@ class StripeService {
       return response.statusCode == 200;
     } catch (e) {
       throw Exception('Ошибка отмены подписки: $e');
+    }
+  }
+
+  /// Обновление подписки (upgrade/downgrade)
+  Future<bool> updateSubscription({
+    required String subscriptionId,
+    required String newPriceId,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$backendUrl/update-subscription'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'subscription_id': subscriptionId,
+          'new_price_id': newPriceId,
+        }),
+      );
+
+      return response.statusCode == 200;
+    } catch (e) {
+      throw Exception('Ошибка обновления подписки: $e');
     }
   }
 
