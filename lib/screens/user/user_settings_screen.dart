@@ -309,21 +309,6 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
                         },
                         theme: theme,
                       ),
-                      _buildDivider(theme),
-                      _buildListTile(
-                        icon: Icons.phone,
-                        iconColor: Colors.green,
-                        title: 'Телефон',
-                        subtitle: _phone ?? 'Не указан',
-                        onTap: () async {
-                          final result = await Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const EditProfileScreen()),
-                          );
-                          if (result == true) _loadProfile();
-                        },
-                        theme: theme,
-                      ),
                     ],
                   ),
 

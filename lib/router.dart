@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 // Импорты экранов
 import 'screens/login_screen.dart';
@@ -26,7 +25,6 @@ import 'widgets/auth_wrapper.dart';
 
 // Ключи навигации нужны для управления стеком
 final _rootNavigatorKey = GlobalKey<NavigatorState>();
-final _shellNavigatorKey = GlobalKey<NavigatorState>();
 
 final router = GoRouter(
   navigatorKey: _rootNavigatorKey,
