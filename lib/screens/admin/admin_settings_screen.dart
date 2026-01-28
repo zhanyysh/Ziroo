@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:go_router/go_router.dart';
 import '../../services/theme_service.dart';
+import 'admin_edit_profile_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -220,15 +221,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       icon: Icons.person_outline,
                       iconColor: Colors.blue,
                       title: 'Редактировать профиль',
-                      onTap: () {},
-                    ),
-                    _buildDivider(),
-                    _buildSettingsTile(
-                      theme,
-                      icon: Icons.lock_outline,
-                      iconColor: Colors.orange,
-                      title: 'Сменить пароль',
-                      onTap: () {},
+                      onTap: () async {
+                        final changed = await Navigator.push<bool>(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const AdminEditProfileScreen(),
+                          ),
+                        );
+                        if (changed == true) {
+                          _loadProfile();
+                        }
+                      },
                     ),
                     _buildDivider(),
                     _buildSettingsTile(
