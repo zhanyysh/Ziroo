@@ -147,7 +147,7 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
         slivers: [
           // Header
           SliverAppBar(
-            expandedHeight: 280,
+            expandedHeight: 320,
             pinned: true,
             elevation: 0,
             backgroundColor: theme.colorScheme.primary,
