@@ -54,7 +54,8 @@ class MyApp extends StatelessWidget {
             colorScheme: ColorScheme.fromSeed(
               seedColor: Colors.deepPurple,
               brightness: Brightness.dark,
-              surface: const Color(0xFF121212), // Dark background
+              primary: Colors.deepPurple, // Тот же фиолетовый что и в светлой теме
+              surface: const Color(0xFF121212),
             ),
             scaffoldBackgroundColor: const Color(0xFF121212),
             appBarTheme: const AppBarTheme(
@@ -71,7 +72,7 @@ class MyApp extends StatelessWidget {
             ),
             bottomNavigationBarTheme: const BottomNavigationBarThemeData(
               backgroundColor: Color(0xFF1E1E1E),
-              selectedItemColor: Colors.deepPurpleAccent,
+              selectedItemColor: Colors.deepPurple, // Тот же фиолетовый
               unselectedItemColor: Colors.grey,
             ),
           ),
