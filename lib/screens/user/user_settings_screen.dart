@@ -357,15 +357,6 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
                       ),
                       _buildDivider(theme),
                       _buildListTile(
-                        icon: Icons.notifications,
-                        iconColor: Colors.orange,
-                        title: 'Уведомления',
-                        subtitle: 'Управление уведомлениями',
-                        onTap: () {},
-                        theme: theme,
-                      ),
-                      _buildDivider(theme),
-                      _buildListTile(
                         icon: Icons.language,
                         iconColor: Colors.teal,
                         title: 'Язык',
