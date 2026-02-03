@@ -329,15 +329,6 @@ class _UserSettingsScreenState extends State<UserSettingsScreen> {
                         onTap: () => context.push('/subscription'),
                         theme: theme,
                       ),
-                      _buildDivider(theme),
-                      _buildListTile(
-                        icon: Icons.payment,
-                        iconColor: Colors.green,
-                        title: 'Способы оплаты',
-                        subtitle: 'Банковские карты',
-                        onTap: () => context.push('/payment'),
-                        theme: theme,
-                      ),
                     ],
                   ),
 

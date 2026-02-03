@@ -83,10 +83,10 @@ class _UserMainScreenState extends State<UserMainScreen> {
             .toSet();
       }
 
-      // Загружаем последние 5 акций
+      // Загружаем последние 5 акций с данными компании
       final eventsData = await _supabase
           .from('company_events')
-          .select()
+          .select('*, companies(id, name, description, logo_url, discount_percentage, category)')
           .order('created_at', ascending: false)
           .limit(5);
 
@@ -517,87 +517,108 @@ class _UserMainScreenState extends State<UserMainScreen> {
   }
 
   Widget _buildEventCard(Map<String, dynamic> event, ThemeData theme) {
-    return Container(
-      width: 280,
-      margin: const EdgeInsets.only(right: 12, left: 4, top: 4, bottom: 4),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        image: event['image_url'] != null
-            ? DecorationImage(
-                image: NetworkImage(event['image_url']),
-                fit: BoxFit.cover,
-              )
-            : null,
-        gradient: event['image_url'] == null
-            ? LinearGradient(
-                colors: [
-                  theme.colorScheme.primary,
-                  theme.colorScheme.secondary,
-                ],
-              )
-            : null,
-        boxShadow: [
-          BoxShadow(
-            color: theme.colorScheme.primary.withOpacity(0.2),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+    return GestureDetector(
+      onTap: () {
+        // Получаем данные о компании из события
+        final companyData = event['companies'] as Map<String, dynamic>?;
+        if (companyData != null) {
+          context.push('/home/company', extra: companyData);
+        } else {
+          // Если данные компании не загружены, ищем в списке компаний
+          final companyId = event['company_id'] as String?;
+          if (companyId != null) {
+            final company = _companies.firstWhere(
+              (c) => c['id'] == companyId,
+              orElse: () => <String, dynamic>{},
+            );
+            if (company.isNotEmpty) {
+              context.push('/home/company', extra: company);
+            }
+          }
+        }
+      },
       child: Container(
+        width: 280,
+        margin: const EdgeInsets.only(right: 12, left: 4, top: 4, bottom: 4),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
-          gradient: LinearGradient(
-            begin: Alignment.bottomCenter,
-            end: Alignment.topCenter,
-            colors: [
-              Colors.black.withOpacity(0.8),
-              Colors.transparent,
-            ],
-          ),
+          image: event['image_url'] != null
+              ? DecorationImage(
+                  image: NetworkImage(event['image_url']),
+                  fit: BoxFit.cover,
+                )
+              : null,
+          gradient: event['image_url'] == null
+              ? LinearGradient(
+                  colors: [
+                    theme.colorScheme.primary,
+                    theme.colorScheme.secondary,
+                  ],
+                )
+              : null,
+          boxShadow: [
+            BoxShadow(
+              color: theme.colorScheme.primary.withOpacity(0.2),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.end,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.orange,
-                borderRadius: BorderRadius.circular(20),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: LinearGradient(
+              begin: Alignment.bottomCenter,
+              end: Alignment.topCenter,
+              colors: [
+                Colors.black.withOpacity(0.8),
+                Colors.transparent,
+              ],
+            ),
+          ),
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.orange,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  'АКЦИЯ',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
-              child: const Text(
-                'АКЦИЯ',
-                style: TextStyle(
+              const SizedBox(height: 8),
+              Text(
+                event['title'] ?? '',
+                style: const TextStyle(
                   color: Colors.white,
-                  fontSize: 10,
+                  fontSize: 16,
                   fontWeight: FontWeight.bold,
                 ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              event['title'] ?? '',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-            if (event['description'] != null)
-              Text(
-                event['description'],
-                style: TextStyle(
-                  color: Colors.white.withOpacity(0.8),
-                  fontSize: 12,
-                ),
-                maxLines: 1,
+                maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
-          ],
+              if (event['description'] != null)
+                Text(
+                  event['description'],
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.8),
+                    fontSize: 12,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+            ],
+          ),
         ),
       ),
     );
