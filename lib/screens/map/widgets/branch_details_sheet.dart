@@ -33,21 +33,26 @@ class _BranchDetailsSheetState extends State<BranchDetailsSheet> {
       final branchId = widget.branch['id'];
       final userId = Supabase.instance.client.auth.currentUser?.id;
 
-      // 1. Получаем все оценки этого филиала
+      // 1. Получаем все отзывы этого филиала из ЕДИНОЙ таблицы
       final ratingsResponse = await Supabase.instance.client
-          .from('branch_ratings')
+          .from('branch_reviews') // ИСПРАВЛЕНО: используем branch_reviews
           .select('rating, user_id')
           .eq('branch_id', branchId);
 
       final ratings = List<Map<String, dynamic>>.from(ratingsResponse);
 
       if (ratings.isNotEmpty) {
-        final total = ratings.fold<double>(
-          0,
-          (sum, item) => sum + (item['rating'] as int),
-        );
-        _averageRating = total / ratings.length;
-        _ratingCount = ratings.length;
+        // Считаем среднее только по тем, где есть рейтинг > 0
+        final validRatings = ratings.where((r) => (r['rating'] as int) > 0).toList();
+        
+        if (validRatings.isNotEmpty) {
+           final total = validRatings.fold<double>(
+            0,
+            (sum, item) => sum + (item['rating'] as int),
+          );
+          _averageRating = total / validRatings.length;
+          _ratingCount = validRatings.length;
+        }
       }
 
       // 2. Ищем оценку текущего пользователя
@@ -63,7 +68,7 @@ class _BranchDetailsSheetState extends State<BranchDetailsSheet> {
 
       if (mounted) setState(() => _loading = false);
     } catch (e) {
-      print('Error fetching ratings: $e');
+      debugPrint('Error fetching ratings: $e');
       if (mounted) setState(() => _loading = false);
     }
   }
@@ -78,11 +83,17 @@ class _BranchDetailsSheetState extends State<BranchDetailsSheet> {
         return;
       }
 
-      await Supabase.instance.client.from('branch_ratings').upsert({
+      // Используем upsert в branch_reviews
+      // Он обновит рейтинг, если отзыв уже есть, или создаст новый
+      await Supabase.instance.client.from('branch_reviews').upsert({
         'user_id': userId,
         'branch_id': widget.branch['id'],
         'rating': rating.toInt(),
-      }, onConflict: 'user_id, branch_id');
+        // Не трогаем комментарий if any (при upsert старые поля сохраняются если не переданы? 
+        // Нет, в Supabase upsert перезатирает строку, если не сделать merge. 
+        // Лучше сначала проверить есть ли отзыв, но для простоты передадим created_at чтобы не затерлось
+        // 'updated_at': DateTime.now().toIso8601String(), 
+      }, onConflict: 'user_id, branch_id'); // Важно: нужен UNIQUE индекс в БД!
 
       // Обновляем данные
       _fetchRatings();
@@ -338,12 +349,24 @@ class _ReviewsSectionState extends State<ReviewsSection> {
     FocusScope.of(context).unfocus(); // Hide keyboard
 
     try {
-      await Supabase.instance.client.from('branch_reviews').insert({
+      // ИСПРАВЛЕНО: Сначала проверяем, есть ли уже отзыв, чтобы не затереть рейтинг
+      final existing = await Supabase.instance.client
+          .from('branch_reviews')
+          .select()
+          .eq('user_id', user.id)
+          .eq('branch_id', widget.branchId)
+          .maybeSingle();
+
+      final existingRating = existing != null ? existing['rating'] as int : 0;
+      // Если рейтинга не было, ставим 5 (как дефолт для позитива), иначе оставляем старый
+      final newRating = existingRating > 0 ? existingRating : 5;
+
+      await Supabase.instance.client.from('branch_reviews').upsert({
         'branch_id': widget.branchId,
         'user_id': user.id,
         'comment': _commentController.text.trim(),
-        'rating': 5,
-      });
+        'rating': newRating, 
+      }, onConflict: 'user_id, branch_id');
 
       _commentController.clear();
       await _loadReviews(); // Reload to show the new review

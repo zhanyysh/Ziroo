@@ -42,6 +42,10 @@ class _MapScreenState extends State<MapScreen> {
   _compassStreamSubscription; // Слушатель компаса
   bool _isFollowingUser = false;
   double _currentHeading = 0.0;
+  
+  // Кэшированные маркеры для оптимизации и стабильности кликов
+  List<Marker> _markers = [];
+  final Map<Key, Map<String, dynamic>> _markerBranchMap = {};
 
   @override
   void initState() {
@@ -154,6 +158,54 @@ class _MapScreenState extends State<MapScreen> {
         .replaceAll('yo', 'e');
   }
 
+  void _updateMarkers() {
+    final newMarkers = <Marker>[];
+    _markerBranchMap.clear();
+
+    debugPrint('Updating markers. Branches count: ${_filteredBranches.length}');
+
+    for (var branch in _filteredBranches) {
+      final lat = branch['latitude'] as double?;
+      final lng = branch['longitude'] as double?;
+      final company = branch['companies'] as Map<String, dynamic>?;
+      final logoUrl = company?['logo_url'] as String?;
+      final name = company?['name'] as String? ?? '';
+      final priority = branch['map_priority'] as int? ?? 3;
+      final id = branch['id'].toString();
+
+      if (lat == null || lng == null) continue;
+
+      // Используем уникальный ключ для каждого маркера
+      final key = ValueKey(id);
+
+      // ДИНАМИЧЕСКИЙ РАЗМЕР МАРКЕРА
+      double width = 20;
+      double height = 20;
+
+      if (priority == 1) {
+        width = 160;
+        height = 60;
+      } else if (priority == 2) {
+        width = 50;
+        height = 50;
+      }
+
+      final marker = Marker(
+        key: key,
+        point: LatLng(lat, lng),
+        width: width,
+        height: height,
+        child: _buildMarkerIcon(logoUrl, name, priority),
+      );
+
+      newMarkers.add(marker);
+      _markerBranchMap[key] = branch;
+    }
+    
+    _markers = newMarkers; 
+    debugPrint('Markers updated. Count: ${_markers.length}');
+  }
+
   void _onSearchChanged() {
     if (_debounce?.isActive ?? false) _debounce!.cancel();
 
@@ -166,7 +218,7 @@ class _MapScreenState extends State<MapScreen> {
         return;
       }
 
-      setState(() => _loading = true);
+      setState(() => _loading = true); // Corrected syntax
 
       try {
         List<Map<String, dynamic>> finalResults = [];
@@ -469,7 +521,8 @@ class _MapScreenState extends State<MapScreen> {
           } else {
             _filteredBranches = _branches;
           }
-
+          
+          _updateMarkers(); // Обновляем маркеры
           _loading = false;
         });
       }
@@ -687,66 +740,32 @@ class _MapScreenState extends State<MapScreen> {
                       ),
                     ),
                 ],
-              ),
+              ), // Закрываем MarkerLayer
+              
               // Слой маркеров магазинов (Кластеризация)
               MarkerClusterLayerWidget(
                 options: MarkerClusterLayerOptions(
                   maxClusterRadius: 80,
-                  size: const Size(45, 45), // Чуть больше для красоты
+                  size: const Size(45, 45),
                   alignment: Alignment.center,
                   padding: const EdgeInsets.all(50),
                   maxZoom: 18,
-                  markers:
-                      _filteredBranches
-                          .map((branch) {
-                            final lat = branch['latitude'] as double?;
-                            final lng = branch['longitude'] as double?;
-                            final company =
-                                branch['companies'] as Map<String, dynamic>?;
-                            final logoUrl = company?['logo_url'] as String?;
-                            final name = company?['name'] as String? ?? '';
-                            final priority =
-                                branch['map_priority'] as int? ?? 3;
-
-                            if (lat == null || lng == null) return null;
-
-                            // ДИНАМИЧЕСКИЙ РАЗМЕР МАРКЕРА
-                            // По умолчанию (для мелких точек) делаем их компактнее
-                            double width = 20;
-                            double height = 20;
-
-                            if (priority == 1) {
-                              width = 160; // Широкий для "Чипса" с текстом
-                              height = 60;
-                            } else if (priority == 2) {
-                              width = 50;
-                              height = 50;
-                            }
-
-                            return Marker(
-                              point: LatLng(lat, lng),
-                              width: width,
-                              height: height,
-                              child: GestureDetector(
-                                onTap: () => _showBranchDetails(branch),
-                                child: _buildMarkerIcon(
-                                  logoUrl,
-                                  name,
-                                  priority,
-                                ),
-                              ),
-                            );
-                          })
-                          .whereType<Marker>()
-                          .toList(),
+                  markers: _markers, // Используем закэшированный список
+                  // ВАЖНО: Используем нативный обработчик кликов плагина
+                  onMarkerTap: (marker) {
+                    final branch = _markerBranchMap[marker.key];
+                    if (branch != null) {
+                      _showBranchDetails(branch);
+                    } else {
+                      debugPrint('Branch not found for marker key: ${marker.key}');
+                    }
+                  },
                   builder: (context, markers) {
-                    // КРАСИВЫЙ КЛАСТЕР (Группировка)
+                    // КРАСИВЫЙ КЛАСТЕР
                     return Container(
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: const Color(
-                          0xFF2B2E4A,
-                        ), // Темно-синий профессиональный цвет
+                        color: const Color(0xFF2B2E4A),
                         border: Border.all(color: Colors.white, width: 2),
                         boxShadow: [
                           BoxShadow(
