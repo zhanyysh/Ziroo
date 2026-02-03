@@ -459,14 +459,14 @@ class _CompanyBranchesScreenState extends State<CompanyBranchesScreen> {
     }
   }
 
-  Future<void> _deleteBranch(String id) async {
+  Future<void> _deleteBranch(String id, String branchName) async {
     try {
       await Supabase.instance.client
           .from('company_branches')
           .delete()
           .eq('id', id);
 
-      await AdminLogger.log('delete_branch', 'Удален филиал ID: $id');
+      await AdminLogger.log('delete_branch', 'Удален филиал: $branchName');
 
       loadBranches();
     } catch (e) {
@@ -476,7 +476,7 @@ class _CompanyBranchesScreenState extends State<CompanyBranchesScreen> {
     }
   }
 
-  Future<void> _assignManager(String branchId, String? managerId) async {
+  Future<void> _assignManager(String branchId, String branchName, String? managerId, String? managerName) async {
     try {
       if (managerId != null) {
         // Добавляем менеджера в branch_managers
@@ -495,7 +495,7 @@ class _CompanyBranchesScreenState extends State<CompanyBranchesScreen> {
 
       await AdminLogger.log(
         'assign_manager',
-        'Добавлен менеджер $managerId для филиала $branchId',
+        'Назначен менеджер «${managerName ?? 'Неизвестный'}» на филиал «$branchName»',
       );
 
       loadBranches();
@@ -517,7 +517,7 @@ class _CompanyBranchesScreenState extends State<CompanyBranchesScreen> {
     }
   }
 
-  Future<void> _removeManager(String branchId, String managerId) async {
+  Future<void> _removeManager(String branchId, String branchName, String managerId, String managerName) async {
     try {
       await Supabase.instance.client
           .from('branch_managers')
@@ -527,7 +527,7 @@ class _CompanyBranchesScreenState extends State<CompanyBranchesScreen> {
 
       await AdminLogger.log(
         'remove_manager',
-        'Удален менеджер $managerId из филиала $branchId',
+        'Удален менеджер «$managerName» из филиала «$branchName»',
       );
 
       loadBranches();
@@ -592,7 +592,12 @@ class _CompanyBranchesScreenState extends State<CompanyBranchesScreen> {
                               icon: const Icon(Icons.remove_circle, color: Colors.red),
                               onPressed: () {
                                 Navigator.pop(ctx);
-                                _removeManager(branchId, m['id']);
+                                _removeManager(
+                                  branchId, 
+                                  branch['name'] ?? 'Филиал', 
+                                  m['id'],
+                                  m['full_name'] ?? m['email'] ?? 'Менеджер',
+                                );
                               },
                             ),
                           ),
@@ -630,7 +635,12 @@ class _CompanyBranchesScreenState extends State<CompanyBranchesScreen> {
                                     icon: const Icon(Icons.add_circle, color: Colors.green),
                                     onPressed: () {
                                       Navigator.pop(ctx);
-                                      _assignManager(branchId, m['id']);
+                                      _assignManager(
+                                        branchId, 
+                                        branch['name'] ?? 'Филиал', 
+                                        m['id'],
+                                        m['full_name'] ?? m['email'] ?? 'Менеджер',
+                                      );
                                     },
                                   ),
                                 ))
@@ -738,7 +748,7 @@ class _CompanyBranchesScreenState extends State<CompanyBranchesScreen> {
                           if (value == 'manager') {
                             _showManagerDialog(b);
                           } else if (value == 'delete') {
-                            _deleteBranch(b['id']);
+                            _deleteBranch(b['id'], b['name'] ?? 'Филиал');
                           }
                         },
                         itemBuilder:

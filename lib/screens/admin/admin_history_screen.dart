@@ -25,6 +25,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
     'delete_company',
     'add_branch',
     'delete_branch',
+    'assign_manager',
+    'remove_manager',
   ];
 
   @override
@@ -39,7 +41,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       // Start the query builder
       var query = Supabase.instance.client
           .from('admin_logs')
-          .select('*, profiles(email)'); // Returns PostgrestFilterBuilder
+          .select('*, profiles(email, full_name)'); // Получаем email и имя
 
       // Apply filters BEFORE ordering
       if (_selectedAction != null && _selectedAction != 'Все') {
@@ -328,8 +330,183 @@ class _HistoryScreenState extends State<HistoryScreen> {
       case 'delete_company': return 'Удаление';
       case 'add_branch': return 'Добавление филиала';
       case 'delete_branch': return 'Удаление филиала';
+      case 'assign_manager': return 'Назначение менеджера';
+      case 'remove_manager': return 'Удаление менеджера';
       default: return action;
     }
+  }
+
+  void _showLogDetails(Map<String, dynamic> log, ThemeData theme) {
+    final date = DateTime.parse(log['created_at']).toLocal();
+    final action = log['action_type'] as String;
+    final details = log['details'] as String?;
+    final profile = log.containsKey('profiles') ? log['profiles'] : null;
+    final displayName = profile != null 
+        ? (profile['full_name'] as String?)?.isNotEmpty == true 
+            ? profile['full_name'] 
+            : profile['email'] ?? 'Admin'
+        : 'Admin';
+    final actionInfo = _getActionInfo(action);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: theme.scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Заголовок
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 20),
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            
+            // Иконка и тип действия
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: actionInfo.color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    actionInfo.icon,
+                    color: actionInfo.color,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        actionInfo.label,
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Text(
+                        _getActionLabel(action),
+                        style: TextStyle(
+                          color: actionInfo.color,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            
+            const SizedBox(height: 24),
+            const Divider(),
+            const SizedBox(height: 16),
+            
+            // Детали
+            _buildDetailRow(
+              icon: Icons.description_outlined,
+              label: 'Описание',
+              value: details ?? 'Нет описания',
+              theme: theme,
+            ),
+            const SizedBox(height: 12),
+            _buildDetailRow(
+              icon: Icons.person_outline,
+              label: 'Администратор',
+              value: displayName,
+              theme: theme,
+            ),
+            const SizedBox(height: 12),
+            _buildDetailRow(
+              icon: Icons.calendar_today_outlined,
+              label: 'Дата',
+              value: DateFormat('dd.MM.yyyy').format(date),
+              theme: theme,
+            ),
+            const SizedBox(height: 12),
+            _buildDetailRow(
+              icon: Icons.access_time,
+              label: 'Время',
+              value: DateFormat('HH:mm:ss').format(date),
+              theme: theme,
+            ),
+            
+            const SizedBox(height: 24),
+            
+            // Кнопка закрыть
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text('Закрыть'),
+              ),
+            ),
+            SizedBox(height: MediaQuery.of(context).padding.bottom),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetailRow({
+    required IconData icon,
+    required String label,
+    required String value,
+    required ThemeData theme,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          icon,
+          size: 20,
+          color: theme.colorScheme.primary,
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildLogCard(Map<String, dynamic> log, ThemeData theme) {
@@ -337,84 +514,96 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final action = log['action_type'] as String;
     final details = log['details'] as String?;
     final profile = log.containsKey('profiles') ? log['profiles'] : null;
-    final email = profile != null ? profile['email'] : 'Admin';
+    // Показываем имя если есть, иначе email, иначе 'Admin'
+    final displayName = profile != null 
+        ? (profile['full_name'] as String?)?.isNotEmpty == true 
+            ? profile['full_name'] 
+            : profile['email'] ?? 'Admin'
+        : 'Admin';
 
     final actionInfo = _getActionInfo(action);
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: theme.dividerColor.withOpacity(0.1),
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: actionInfo.color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              actionInfo.icon,
-              color: actionInfo.color,
-              size: 20,
-            ),
+    return GestureDetector(
+      onTap: () => _showLogDetails(log, theme),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: theme.cardColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: theme.dividerColor.withOpacity(0.1),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  details ?? actionInfo.label,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Icon(
-                      Icons.person_outline,
-                      size: 14,
-                      color: theme.colorScheme.onSurfaceVariant,
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: actionInfo.color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(
+                actionInfo.icon,
+                color: actionInfo.color,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    details ?? actionInfo.label,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w500,
                     ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        email,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.person_outline,
+                        size: 14,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          displayName,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Icon(
+                        Icons.access_time,
+                        size: 14,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        DateFormat('dd.MM.yy HH:mm').format(date),
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
-                        overflow: TextOverflow.ellipsis,
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Icon(
-                      Icons.access_time,
-                      size: 14,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      DateFormat('dd.MM.yy HH:mm').format(date),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+            Icon(
+              Icons.chevron_right,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -433,6 +622,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
         return (icon: Icons.location_off, color: Colors.deepOrange, label: 'Филиал удален');
       case 'assign_manager':
         return (icon: Icons.person_add, color: Colors.purple, label: 'Менеджер назначен');
+      case 'remove_manager':
+        return (icon: Icons.person_remove, color: Colors.red, label: 'Менеджер удален');
       default:
         return (icon: Icons.history, color: Colors.grey, label: action);
     }
