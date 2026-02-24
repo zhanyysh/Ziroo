@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
+import '../../../models/branch.dart';
+import '../../../repositories/branch_repository.dart';
 
 class BranchDetailsSheet extends StatefulWidget {
-  final Map<String, dynamic> branch;
+  final Branch branch;
   final VoidCallback onBuildRoute; // Callback для построения маршрута
 
   const BranchDetailsSheet({
@@ -17,6 +19,9 @@ class BranchDetailsSheet extends StatefulWidget {
 }
 
 class _BranchDetailsSheetState extends State<BranchDetailsSheet> {
+  final BranchRepository _repository = BranchRepository(
+    Supabase.instance.client,
+  );
   double _currentRating = 0;
   double _averageRating = 0;
   int _ratingCount = 0;
@@ -30,23 +35,19 @@ class _BranchDetailsSheetState extends State<BranchDetailsSheet> {
 
   Future<void> _fetchRatings() async {
     try {
-      final branchId = widget.branch['id'];
+      final branchId = widget.branch.id.toString();
       final userId = Supabase.instance.client.auth.currentUser?.id;
 
-      // 1. Получаем все отзывы этого филиала из ЕДИНОЙ таблицы
-      final ratingsResponse = await Supabase.instance.client
-          .from('branch_reviews') // ИСПРАВЛЕНО: используем branch_reviews
-          .select('rating, user_id')
-          .eq('branch_id', branchId);
-
-      final ratings = List<Map<String, dynamic>>.from(ratingsResponse);
+      // 1. Получаем все отзывы через репозиторий
+      final ratings = await _repository.getRatings(branchId);
 
       if (ratings.isNotEmpty) {
         // Считаем среднее только по тем, где есть рейтинг > 0
-        final validRatings = ratings.where((r) => (r['rating'] as int) > 0).toList();
-        
+        final validRatings =
+            ratings.where((r) => (r['rating'] as int) > 0).toList();
+
         if (validRatings.isNotEmpty) {
-           final total = validRatings.fold<double>(
+          final total = validRatings.fold<double>(
             0,
             (sum, item) => sum + (item['rating'] as int),
           );
@@ -83,19 +84,12 @@ class _BranchDetailsSheetState extends State<BranchDetailsSheet> {
         return;
       }
 
-      // Используем upsert в branch_reviews
-      // Он обновит рейтинг, если отзыв уже есть, или создаст новый
-      await Supabase.instance.client.from('branch_reviews').upsert({
-        'user_id': userId,
-        'branch_id': widget.branch['id'],
-        'rating': rating.toInt(),
-        // Не трогаем комментарий if any (при upsert старые поля сохраняются если не переданы? 
-        // Нет, в Supabase upsert перезатирает строку, если не сделать merge. 
-        // Лучше сначала проверить есть ли отзыв, но для простоты передадим created_at чтобы не затерлось
-        // 'updated_at': DateTime.now().toIso8601String(), 
-      }, onConflict: 'user_id, branch_id'); // Важно: нужен UNIQUE индекс в БД!
+      await _repository.updateRating(
+        userId: userId,
+        branchId: widget.branch.id.toString(),
+        rating: rating.toInt(),
+      );
 
-      // Обновляем данные
       _fetchRatings();
 
       if (mounted) {
@@ -112,11 +106,15 @@ class _BranchDetailsSheetState extends State<BranchDetailsSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final company = widget.branch['companies'] as Map<String, dynamic>?;
-    final name = company?['name'] ?? 'Магазин';
-    final address = widget.branch['name'] ?? 'Адрес не указан';
-    final discount = company?['discount_percentage'] ?? 0;
-    final logoUrl = company?['logo_url'];
+    final company = widget.branch.company;
+    final name = company?.name ?? 'Магазин';
+
+    // Original code logic was: final address = widget.branch['name'] ?? 'Адрес не указан';
+    // We map that to branch.name
+    final address = widget.branch.name ?? 'Адрес не указан';
+
+    final discount = company?.discountPercentage ?? 0;
+    final logoUrl = company?.logoUrl;
 
     return DraggableScrollableSheet(
       initialChildSize: 0.5,
@@ -234,7 +232,7 @@ class _BranchDetailsSheetState extends State<BranchDetailsSheet> {
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 10),
-              ReviewsSection(branchId: widget.branch['id']),
+              ReviewsSection(branchId: widget.branch.id.toString()),
 
               const SizedBox(height: 30),
               Row(
@@ -298,6 +296,9 @@ class ReviewsSection extends StatefulWidget {
 
 class _ReviewsSectionState extends State<ReviewsSection> {
   final TextEditingController _commentController = TextEditingController();
+  final BranchRepository _repository = BranchRepository(
+    Supabase.instance.client,
+  );
   List<Map<String, dynamic>> _reviews = [];
   bool _loading = true;
   String? _error;
@@ -310,15 +311,11 @@ class _ReviewsSectionState extends State<ReviewsSection> {
 
   Future<void> _loadReviews() async {
     try {
-      final data = await Supabase.instance.client
-          .from('branch_reviews')
-          .select('*, profiles:user_id(email, avatar_url)')
-          .eq('branch_id', widget.branchId)
-          .order('created_at', ascending: false);
-      
+      final reviews = await _repository.getReviews(widget.branchId);
+
       if (mounted) {
         setState(() {
-          _reviews = List<Map<String, dynamic>>.from(data);
+          _reviews = reviews;
           _loading = false;
           _error = null;
         });
@@ -334,8 +331,8 @@ class _ReviewsSectionState extends State<ReviewsSection> {
   }
 
   Future<void> _addReview() async {
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Войдите, чтобы оставить отзыв')),
       );
@@ -344,29 +341,25 @@ class _ReviewsSectionState extends State<ReviewsSection> {
 
     if (_commentController.text.trim().isEmpty) return;
 
-    // Optimistic update (optional, but good for UX)
-    // For now, just show loading or clear immediately
     FocusScope.of(context).unfocus(); // Hide keyboard
 
     try {
       // ИСПРАВЛЕНО: Сначала проверяем, есть ли уже отзыв, чтобы не затереть рейтинг
-      final existing = await Supabase.instance.client
-          .from('branch_reviews')
-          .select()
-          .eq('user_id', user.id)
-          .eq('branch_id', widget.branchId)
-          .maybeSingle();
+      final existing = await _repository.getUserReview(
+        userId: userId,
+        branchId: widget.branchId,
+      );
 
       final existingRating = existing != null ? existing['rating'] as int : 0;
       // Если рейтинга не было, ставим 5 (как дефолт для позитива), иначе оставляем старый
       final newRating = existingRating > 0 ? existingRating : 5;
 
-      await Supabase.instance.client.from('branch_reviews').upsert({
-        'branch_id': widget.branchId,
-        'user_id': user.id,
-        'comment': _commentController.text.trim(),
-        'rating': newRating, 
-      }, onConflict: 'user_id, branch_id');
+      await _repository.submitReview(
+        userId: userId,
+        branchId: widget.branchId,
+        comment: _commentController.text.trim(),
+        rating: newRating,
+      );
 
       _commentController.clear();
       await _loadReviews(); // Reload to show the new review
